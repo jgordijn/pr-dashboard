@@ -1,0 +1,23 @@
+# PR Dashboard Configuration
+# Copy this file to: ~/.config/pr-dashboard/config.toml
+#
+# Required sections: [general] with username, at least one [[organizations]]
+# Optional sections: [display], [notifications]
+
+[general]
+username = "your-github-username"    # Required: your GitHub login
+refresh_interval = 30                # Optional: seconds (10-300), default 30
+
+[[organizations]]
+login = "organisation"               # Required: GitHub org login (used in search)
+
+# Add more organizations as needed:
+# [[organizations]]
+# login = "another-org"
+
+[display]
+show_drafts = true                   # Optional: show draft PRs, default true
+initial_mode = "full"                # Optional: "full", "compact", "minimal", default "full"
+
+[notifications]
+highlight_changes = true             # Optional: highlight changed PRs, default true

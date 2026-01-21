@@ -1,0 +1,17 @@
+# Worktrees
+.worktrees/
+
+# Build artifacts
+/pr-dashboard
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+node_modules
+.tmp
