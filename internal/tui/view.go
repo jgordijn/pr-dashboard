@@ -360,6 +360,9 @@ func (m Model) getMergeIcon(status model.MergeStatus) string {
 func (m Model) renderStatusBar() string {
 	var parts []string
 
+	// Active account
+	parts = append(parts, fmt.Sprintf("Account: %s", m.Config.General.Username))
+
 	// Watch mode indicator
 	if m.WatchMode {
 		parts = append(parts, fmt.Sprintf("Watch: %ds", m.Config.General.RefreshInterval))
@@ -436,6 +439,8 @@ func (m Model) renderModal() string {
 			m.Styles.ModalTitleStyle.Render(m.Modal.Title) + "\n\n" +
 				m.Modal.Message + "\n\n" +
 				m.Styles.DimStyle.Render("Press Enter, q, or Esc to dismiss"))
+	case ModalAccountPicker:
+		return m.renderAccountPickerModal()
 	default:
 		return ""
 	}
@@ -462,6 +467,7 @@ func (m Model) renderHelpModal() string {
 	b.WriteString("Actions:\n")
 	b.WriteString("  u       Update branch\n")
 	b.WriteString("  r       Refresh\n")
+	b.WriteString("  s       Switch account\n")
 	b.WriteString("  Enter   Open in browser\n")
 	b.WriteString("\n")
 
@@ -479,6 +485,29 @@ func (m Model) renderHelpModal() string {
 	b.WriteString("\n")
 
 	b.WriteString(m.Styles.DimStyle.Render("Press Enter, q, or Esc to dismiss"))
+
+	return m.Styles.ModalStyle.Render(b.String())
+}
+
+
+// renderAccountPickerModal renders the account picker modal.
+func (m Model) renderAccountPickerModal() string {
+	var b strings.Builder
+
+	b.WriteString(m.Styles.ModalTitleStyle.Render("Switch Account"))
+	b.WriteString("\n\n")
+
+	for i, account := range m.Accounts {
+		label := fmt.Sprintf("  %d. %s", i+1, account.Login)
+		if account.Active {
+			label += " (active)"
+		}
+		b.WriteString(label)
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(m.Styles.DimStyle.Render("Press number to select, q or Esc to cancel"))
 
 	return m.Styles.ModalStyle.Render(b.String())
 }

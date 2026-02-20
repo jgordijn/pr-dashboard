@@ -129,8 +129,16 @@ func run() int {
 		return 1
 	}
 
-	// Create GitHub client
-	client, err := github.NewClient()
+	// Create GitHub client using the configured user's token.
+	// go-gh uses whichever gh account is "active", which may differ from
+	// the configured username. Fetching the token explicitly ensures we
+	// always authenticate as the configured user.
+	token, err := config.GHAuthToken(cfg.General.Username)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to get auth token for %s: %v\n", cfg.General.Username, err)
+		return 1
+	}
+	client, err := github.NewClientWithToken(token)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to create GitHub client: %v\n", err)
 		return 1

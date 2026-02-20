@@ -212,3 +212,131 @@ func TestSentinelErrors_CanUseErrorsIs(t *testing.T) {
 		t.Error("ErrGHNotAuthenticated should not match ErrGHCLINotFound")
 	}
 }
+
+
+func TestParseGHAuthStatus_MultipleAccounts(t *testing.T) {
+	output := `github.com
+  ✓ Logged in to github.com account jgordijn (/home/user/.config/gh/hosts.yml)
+  - Active account: true
+  - Git operations protocol: ssh
+  - Token: gho_****
+  - Token scopes: 'repo'
+
+  ✓ Logged in to github.com account jgordijn-ah (/home/user/.config/gh/hosts.yml)
+  - Active account: false
+  - Git operations protocol: ssh
+  - Token: gho_****
+  - Token scopes: 'repo'
+`
+	accounts, err := parseGHAuthStatus(output)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(accounts))
+	}
+	if accounts[0].Login != "jgordijn" || !accounts[0].Active {
+		t.Errorf("expected first account jgordijn (active), got %+v", accounts[0])
+	}
+	if accounts[1].Login != "jgordijn-ah" || accounts[1].Active {
+		t.Errorf("expected second account jgordijn-ah (inactive), got %+v", accounts[1])
+	}
+}
+
+func TestParseGHAuthStatus_SingleAccount(t *testing.T) {
+	output := `github.com
+  ✓ Logged in to github.com account myuser (/home/user/.config/gh/hosts.yml)
+  - Active account: true
+  - Git operations protocol: ssh
+  - Token: gho_****
+`
+	accounts, err := parseGHAuthStatus(output)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(accounts))
+	}
+	if accounts[0].Login != "myuser" || !accounts[0].Active {
+		t.Errorf("expected myuser (active), got %+v", accounts[0])
+	}
+}
+
+func TestParseGHAuthStatus_NoAccounts(t *testing.T) {
+	output := `github.com
+  No accounts logged in
+`
+	_, err := parseGHAuthStatus(output)
+	if err == nil {
+		t.Error("expected error for empty output, got nil")
+	}
+	if !errors.Is(err, ErrNoAccounts) {
+		t.Errorf("expected ErrNoAccounts, got: %v", err)
+	}
+}
+
+func TestParseGHAuthStatus_EmptyOutput(t *testing.T) {
+	_, err := parseGHAuthStatus("")
+	if err == nil {
+		t.Error("expected error for empty output, got nil")
+	}
+	if !errors.Is(err, ErrNoAccounts) {
+		t.Errorf("expected ErrNoAccounts, got: %v", err)
+	}
+}
+
+func TestParseGHAuthStatus_ActiveSecondAccount(t *testing.T) {
+	output := `github.com
+  ✓ Logged in to github.com account first (/home/user/.config/gh/hosts.yml)
+  - Active account: false
+
+  ✓ Logged in to github.com account second (/home/user/.config/gh/hosts.yml)
+  - Active account: true
+`
+	accounts, err := parseGHAuthStatus(output)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(accounts))
+	}
+	if accounts[0].Active {
+		t.Error("expected first account to be inactive")
+	}
+	if !accounts[1].Active {
+		t.Error("expected second account to be active")
+	}
+}
+
+func TestSwitchGHAccount_EmptyUser(t *testing.T) {
+	err := SwitchGHAccount("")
+	if err == nil {
+		t.Error("expected error for empty user, got nil")
+	}
+}
+
+func TestSwitchGHAccount_WhitespaceUser(t *testing.T) {
+	err := SwitchGHAccount("   ")
+	if err == nil {
+		t.Error("expected error for whitespace-only user, got nil")
+	}
+}
+
+func TestSwitchGHAccount_GHNotInstalled(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "empty-path-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	restorePath := withPATH(t, tmpDir)
+	defer restorePath()
+
+	err = SwitchGHAccount("someuser")
+	if err == nil {
+		t.Error("expected error when gh is not installed, got nil")
+	}
+	if !errors.Is(err, ErrGHCLINotFound) {
+		t.Errorf("expected ErrGHCLINotFound, got: %v", err)
+	}
+}

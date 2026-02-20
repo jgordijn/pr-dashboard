@@ -3,6 +3,7 @@ package tui
 import (
 	"time"
 
+	"github.com/jgordijn/pr-dashboard/internal/config"
 	"github.com/jgordijn/pr-dashboard/internal/model"
 )
 
@@ -60,6 +61,8 @@ const (
 	ModalSuccess
 	// ModalError indicates an error modal is shown.
 	ModalError
+	// ModalAccountPicker indicates the account picker modal is shown.
+	ModalAccountPicker
 )
 
 // ModalState represents the current modal state.
@@ -67,4 +70,18 @@ type ModalState struct {
 	Type    ModalType
 	Title   string
 	Message string
+}
+
+
+// AccountsLoadedMsg is sent when the list of gh CLI accounts has been fetched.
+type AccountsLoadedMsg struct {
+	Accounts []config.GHAccount
+	Err      error
+}
+
+// AccountSwitchedMsg is sent when an account switch operation completes.
+type AccountSwitchedMsg struct {
+	Login string // The account that was switched to
+	Token string // The auth token for the new account
+	Err   error
 }

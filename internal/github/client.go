@@ -67,6 +67,24 @@ func NewClient() (*Client, error) {
 	}, nil
 }
 
+// NewClientWithToken creates a new GitHub GraphQL client using an explicit auth token.
+// This bypasses go-gh's in-process config cache, which is necessary after
+// switching accounts via `gh auth switch` within a running process.
+func NewClientWithToken(token string) (*Client, error) {
+	graphqlClient, err := api.NewGraphQLClient(api.ClientOptions{
+		AuthToken: token,
+		Timeout:   httpClientTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
+	}
+
+	return &Client{
+		graphql: &ghGraphQLAdapter{client: graphqlClient},
+	}, nil
+}
+
+
 // NewClientWithGraphQL creates a new Client with a custom GraphQL client.
 // This is primarily used for testing.
 func NewClientWithGraphQL(graphql GraphQLClient) *Client {

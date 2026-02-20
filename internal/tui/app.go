@@ -41,6 +41,10 @@ type Model struct {
 	// Modal state
 	Modal ModalState
 
+	// Account switching
+	Accounts []config.GHAccount
+
+
 	// Status
 	LastRefresh time.Time
 	RateLimit   RateLimitInfo

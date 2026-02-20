@@ -23,9 +23,10 @@ type KeyMap struct {
 	ToggleWatch key.Binding
 
 	// Actions
-	UpdateBranch key.Binding
-	Refresh      key.Binding
-	OpenBrowser  key.Binding
+	UpdateBranch  key.Binding
+	Refresh       key.Binding
+	OpenBrowser   key.Binding
+	SwitchAccount key.Binding
 
 	// UI
 	Help key.Binding
@@ -83,6 +84,10 @@ func NewKeyMap() *KeyMap {
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "open in browser"),
 		),
+		SwitchAccount: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "switch account"),
+		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
@@ -109,7 +114,7 @@ func (k *KeyMap) FullHelp() [][]key.Binding {
 		// Display
 		{k.CycleDisplayMode, k.ToggleDrafts, k.ToggleWatch},
 		// Actions
-		{k.UpdateBranch, k.Refresh, k.OpenBrowser},
+		{k.UpdateBranch, k.Refresh, k.OpenBrowser, k.SwitchAccount},
 		// Other
 		{k.Help, k.Quit},
 	}

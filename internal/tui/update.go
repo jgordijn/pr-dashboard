@@ -2,12 +2,14 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/jgordijn/pr-dashboard/internal/config"
 	"github.com/jgordijn/pr-dashboard/internal/github"
 	"github.com/jgordijn/pr-dashboard/internal/model"
 )
@@ -53,6 +55,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		delete(m.ChangedKeys, msg.Key)
 		return m, nil
 
+	case AccountsLoadedMsg:
+		return m.handleAccountsLoaded(msg)
+
+	case AccountSwitchedMsg:
+		return m.handleAccountSwitched(msg)
+
+
 	case spinner.TickMsg:
 		// Update spinner animation while loading
 		if m.IsLoading {
@@ -68,8 +77,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg processes keyboard input.
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// If modal is showing, only handle dismiss keys
+	// If modal is showing, only handle dismiss keys (and account picker selection)
 	if m.Modal.Type != ModalNone {
+		// Account picker: handle number key to select an account
+		if m.Modal.Type == ModalAccountPicker {
+			if key.Matches(msg, m.Keys.Quit) || key.Matches(msg, m.Keys.OpenBrowser) {
+				m.Modal = ModalState{Type: ModalNone}
+				return m, nil
+			}
+			return m.handleAccountPickerKey(msg)
+		}
 		if key.Matches(msg, m.Keys.Quit) || key.Matches(msg, m.Keys.OpenBrowser) {
 			m.Modal = ModalState{Type: ModalNone}
 			return m, nil
@@ -134,6 +151,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.Keys.OpenBrowser):
 		return m.openInBrowser()
+
+	case key.Matches(msg, m.Keys.SwitchAccount):
+		if m.ActionInProgress {
+			return m, nil
+		}
+		return m, m.listAccountsCmd()
 	}
 
 	return m, nil
@@ -478,4 +501,119 @@ func countPRsInGroups(groups []model.PRGroup) int {
 		count += len(g.PRs)
 	}
 	return count
+}
+
+
+// listAccountsCmd returns a command that fetches the list of gh CLI accounts.
+func (m Model) listAccountsCmd() tea.Cmd {
+	return func() tea.Msg {
+		accounts, err := config.ListGHAccounts()
+		return AccountsLoadedMsg{Accounts: accounts, Err: err}
+	}
+}
+
+// handleAccountsLoaded processes the list of fetched accounts.
+func (m Model) handleAccountsLoaded(msg AccountsLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.Modal = ModalState{
+			Type:    ModalError,
+			Title:   "Account Error",
+			Message: msg.Err.Error(),
+		}
+		return m, nil
+	}
+
+	// Override Active flags to reflect the dashboard's current account,
+	// not the gh CLI's active account (they can differ since we use explicit tokens).
+	for i := range msg.Accounts {
+		msg.Accounts[i].Active = msg.Accounts[i].Login == m.Config.General.Username
+	}
+	m.Accounts = msg.Accounts
+
+	if len(msg.Accounts) <= 1 {
+		m.Modal = ModalState{
+			Type:    ModalError,
+			Title:   "Switch Account",
+			Message: "Only one account available",
+		}
+		return m, nil
+	}
+
+	m.Modal = ModalState{
+		Type:  ModalAccountPicker,
+		Title: "Switch Account",
+	}
+	return m, nil
+}
+
+// handleAccountPickerKey handles key presses while the account picker modal is open.
+func (m Model) handleAccountPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Parse number key (1-based index)
+	idx, err := strconv.Atoi(msg.String())
+	if err != nil || idx < 1 || idx > len(m.Accounts) {
+		return m, nil
+	}
+
+	selected := m.Accounts[idx-1]
+
+	// If already active, just dismiss
+	if selected.Active {
+		m.Modal = ModalState{Type: ModalNone}
+		return m, nil
+	}
+
+	m.Modal = ModalState{Type: ModalNone}
+	m.IsLoading = true
+	return m, m.switchAccountCmd(selected.Login)
+}
+
+// switchAccountCmd returns a command that switches the active gh account
+// and fetches the new account's auth token.
+func (m Model) switchAccountCmd(login string) tea.Cmd {
+	return func() tea.Msg {
+		if err := config.SwitchGHAccount(login); err != nil {
+			return AccountSwitchedMsg{Login: login, Err: err}
+		}
+
+		// Fetch the token explicitly — go-gh caches auth config in-process,
+		// so NewClient() would still use the old token.
+		token, err := config.GHAuthToken(login)
+		if err != nil {
+			return AccountSwitchedMsg{Login: login, Err: err}
+		}
+
+		return AccountSwitchedMsg{Login: login, Token: token}
+	}
+}
+
+// handleAccountSwitched processes an account switch result.
+func (m Model) handleAccountSwitched(msg AccountSwitchedMsg) (tea.Model, tea.Cmd) {
+	m.IsLoading = false
+
+	if msg.Err != nil {
+		m.Modal = ModalState{
+			Type:    ModalError,
+			Title:   "Switch Failed",
+			Message: msg.Err.Error(),
+		}
+		return m, nil
+	}
+
+	// Create a new client with the explicit token — go-gh caches auth config
+	// in-process, so NewClient() would still use the old account's token.
+	newClient, err := github.NewClientWithToken(msg.Token)
+	if err != nil {
+		m.Modal = ModalState{
+			Type:    ModalError,
+			Title:   "Client Error",
+			Message: "Switched account but failed to create client: " + err.Error(),
+		}
+		return m, nil
+	}
+
+	m.Client = newClient
+	m.Config.General.Username = msg.Login
+	m.IsLoading = true
+
+	return m, tea.Batch(m.fetchPRsCmd(), m.Spinner.Tick)
 }

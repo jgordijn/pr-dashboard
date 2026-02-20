@@ -3,7 +3,9 @@ package config
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -18,6 +20,13 @@ var (
 	// Use errors.Is(err, ErrGHNotAuthenticated) to check for this condition.
 	ErrGHNotAuthenticated = errors.New("gh CLI not authenticated. Run `gh auth login` first")
 )
+
+// GHAccount represents an authenticated GitHub CLI account.
+type GHAccount struct {
+	Login  string // GitHub username (login)
+	Active bool   // Whether this is the currently active account
+}
+
 
 // CheckGHCLI verifies that the gh CLI is installed and available in PATH.
 // Returns an error wrapping ErrGHCLINotFound if gh is not found.
@@ -84,4 +93,140 @@ func CheckGHAuth() error {
 	}
 
 	return nil
+}
+
+
+// ErrNoAccounts is returned when no authenticated accounts are found.
+var ErrNoAccounts = errors.New("no authenticated GitHub accounts found")
+
+// accountPattern matches "Logged in to github.com account <login>" lines from gh auth status.
+var accountPattern = regexp.MustCompile(`Logged in to github\.com account (\S+)`)
+
+// activePattern matches "Active account: true" lines from gh auth status.
+var activePattern = regexp.MustCompile(`Active account:\s*true`)
+
+// ListGHAccounts returns all authenticated gh CLI accounts for github.com.
+// It parses the output of `gh auth status --hostname github.com`.
+func ListGHAccounts() ([]GHAccount, error) {
+	if err := CheckGHCLI(); err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ghAuthTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "auth", "status", "--hostname", "github.com")
+	output, err := cmd.CombinedOutput()
+	cleanOutput := stripANSI(string(output))
+
+	// gh auth status exits non-zero when not authenticated at all
+	if err != nil && !strings.Contains(cleanOutput, "Logged in") {
+		return nil, fmt.Errorf("%w: %s", ErrNoAccounts, strings.TrimSpace(cleanOutput))
+	}
+
+	return parseGHAuthStatus(cleanOutput)
+}
+
+// parseGHAuthStatus parses the output of `gh auth status` and extracts accounts.
+// Exported for testing.
+func parseGHAuthStatus(output string) ([]GHAccount, error) {
+	lines := strings.Split(output, "\n")
+
+	var accounts []GHAccount
+	var currentLogin string
+
+	for _, line := range lines {
+		if m := accountPattern.FindStringSubmatch(line); m != nil {
+			// If we had a previous account without an active line, add it as inactive
+			if currentLogin != "" {
+				accounts = append(accounts, GHAccount{Login: currentLogin, Active: false})
+			}
+			currentLogin = m[1]
+			continue
+		}
+
+		if currentLogin != "" && activePattern.MatchString(line) {
+			accounts = append(accounts, GHAccount{Login: currentLogin, Active: true})
+			currentLogin = ""
+			continue
+		}
+
+		if currentLogin != "" && strings.Contains(line, "Active account: false") {
+			accounts = append(accounts, GHAccount{Login: currentLogin, Active: false})
+			currentLogin = ""
+			continue
+		}
+	}
+
+	// Handle last account if no Active line followed
+	if currentLogin != "" {
+		accounts = append(accounts, GHAccount{Login: currentLogin, Active: false})
+	}
+
+	if len(accounts) == 0 {
+		return nil, ErrNoAccounts
+	}
+
+	return accounts, nil
+}
+
+// SwitchGHAccount switches the active gh CLI account by running
+// `gh auth switch --user <login>`.
+func SwitchGHAccount(user string) error {
+	if err := CheckGHCLI(); err != nil {
+		return err
+	}
+
+	user = strings.TrimSpace(user)
+	if user == "" {
+		return fmt.Errorf("account login cannot be empty")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ghAuthTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "auth", "switch", "--user", user)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		cleanOutput := stripANSI(strings.TrimSpace(string(output)))
+		if cleanOutput != "" {
+			return fmt.Errorf("failed to switch account: %s", cleanOutput)
+		}
+		return fmt.Errorf("failed to switch account: %w", err)
+	}
+
+	return nil
+}
+
+// GHAuthToken returns the authentication token for a specific gh CLI account.
+// It runs `gh auth token --user <login>` and returns the token string.
+func GHAuthToken(user string) (string, error) {
+	if err := CheckGHCLI(); err != nil {
+		return "", err
+	}
+
+	user = strings.TrimSpace(user)
+	if user == "" {
+		return "", fmt.Errorf("account login cannot be empty")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ghAuthTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "auth", "token", "--user", user)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		cleanOutput := stripANSI(strings.TrimSpace(string(output)))
+		if cleanOutput != "" {
+			return "", fmt.Errorf("failed to get auth token: %s", cleanOutput)
+		}
+		return "", fmt.Errorf("failed to get auth token: %w", err)
+	}
+
+	token := strings.TrimSpace(string(output))
+	if token == "" {
+		return "", fmt.Errorf("empty token returned for user %s", user)
+	}
+
+	return token, nil
 }
