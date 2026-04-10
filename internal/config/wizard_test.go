@@ -376,7 +376,7 @@ func TestErrWizardCancelled(t *testing.T) {
 func TestNewWizard(t *testing.T) {
 	w := NewWizard()
 	if w == nil {
-		t.Error("NewWizard() should not return nil")
+		t.Fatal("NewWizard() should not return nil")
 	}
 	if w.in != os.Stdin {
 		t.Error("NewWizard().in should be os.Stdin")
@@ -392,7 +392,7 @@ func TestNewWizardWithIO(t *testing.T) {
 
 	w := NewWizardWithIO(in, out)
 	if w == nil {
-		t.Error("NewWizardWithIO() should not return nil")
+		t.Fatal("NewWizardWithIO() should not return nil")
 	}
 	if w.in != in {
 		t.Error("NewWizardWithIO().in should be the provided reader")

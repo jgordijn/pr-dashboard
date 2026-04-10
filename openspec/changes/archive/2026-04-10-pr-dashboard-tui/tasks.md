@@ -260,7 +260,7 @@
 
 ## Phase 4: Domain Model
 
-- [ ] 4.1 Create PR domain model
+- [x] 4.1 Create PR domain model
   - Transform API response to domain model
   - Calculate derived fields (days open from createdAt)
   - Count unresolved review threads from first 100 nodes
@@ -278,13 +278,13 @@
     - `ReviewDecision` (enum: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, NONE)
     - `Check` (name, status)
 
-- [ ] 4.2 Create organization grouping model
+- [x] 4.2 Create organization grouping model
   - Group PRs by organization
   - Sort PRs within org by `updatedAt` descending
   - Track collapsed/expanded state per org
   - File: `internal/model/organization.go`
 
-- [ ] 4.3 Implement change detection
+- [x] 4.3 Implement change detection
   - Compare previous state with new state by stable PR key
   - Detect changes in: check status, review status, merge status, unresolved count
   - Detect new PRs appearing
@@ -293,7 +293,7 @@
 
 ## Phase 5: TUI Foundation
 
-- [ ] 5.1 Define styles
+- [x] 5.1 Define styles
   - Create Lip Gloss styles for all UI elements
   - Color scheme: green/yellow/red for status
   - Highlight style for changed PRs
@@ -301,13 +301,13 @@
   - Styles for: header, PR item, status badges, modal, help, error
   - File: `internal/tui/styles.go`
 
-- [ ] 5.2 Define key bindings
+- [x] 5.2 Define key bindings
   - Map keys to actions using Bubble Tea key.Binding
   - Support vim-style (j/k, gg, G) and arrow navigation
   - File: `internal/tui/keys.go`
   - Bindings: j/k/↑/↓, gg/G, Enter, u, r, c, d, o, O, w, ?, q/Esc
 
-- [ ] 5.3 Create main app model (state management)
+- [x] 5.3 Create main app model (state management)
   - Implement Bubble Tea Model interface
   - Track application state with proper types
   - File: `internal/tui/app.go`
@@ -326,7 +326,7 @@
     - `changedPRs map[string]time.Time` (for highlighting)
     - `rateLimit *RateLimit`
 
-- [ ] 5.4 Implement update logic (message handling)
+- [x] 5.4 Implement update logic (message handling)
   - Handle all key messages
   - Handle tick messages (for watch mode)
   - Handle window size messages
@@ -337,25 +337,25 @@
 
 ## Phase 6: TUI Components
 
-- [ ] 6.1a Render organization headers
+- [x] 6.1a Render organization headers
   - Collapsible section headers
   - Show org name and PR count
   - Visual indicator for collapsed/expanded state
   - File: `internal/tui/list.go` (partial)
 
-- [ ] 6.1b Render PR items
+- [x] 6.1b Render PR items
   - Show all status info based on display mode
   - Selection highlighting
   - Changed-PR highlighting (brief flash)
   - Draft dimming
   - File: `internal/tui/list.go` (partial)
 
-- [ ] 6.1c Handle title truncation
+- [x] 6.1c Handle title truncation
   - Truncate long titles with ellipsis based on terminal width
   - Ensure status columns always visible
   - File: `internal/tui/list.go` (partial)
 
-- [ ] 6.2 Create status bar component
+- [x] 6.2 Create status bar component
   - Show key binding hints
   - Show watch mode status and interval
   - Show last refresh time
@@ -363,20 +363,20 @@
   - Show rate limit warning when limited
   - File: `internal/tui/statusbar.go`
 
-- [ ] 6.3 Create modal component
+- [x] 6.3 Create modal component
   - Overlay on main view
   - Support different modal types: error (red), success (green), help
   - Dismiss with Esc, q, or Enter
   - File: `internal/tui/modal.go`
 
-- [ ] 6.4 Create help view
+- [x] 6.4 Create help view
   - List all key bindings with descriptions
   - Show in modal when `?` pressed
   - File: `internal/tui/help.go`
 
 ## Phase 7: Core Features
 
-- [ ] 7.1 Implement navigation
+- [x] 7.1 Implement navigation
   - j/k and arrow keys for up/down
   - gg for jump to top
   - G for jump to bottom
@@ -384,36 +384,36 @@
   - Track selection by stable PR key
   - File: `internal/tui/navigation.go`
 
-- [ ] 7.2 Implement selection preservation
+- [x] 7.2 Implement selection preservation
   - After refresh, find PR by stable key
   - If selected PR disappeared, move to nearest visible PR
   - If no PRs left, clear selection
   - File: `internal/tui/selection.go`
 
-- [ ] 7.3 Implement refresh
+- [x] 7.3 Implement refresh
   - Manual refresh with `r` key
   - Show loading indicator during refresh
   - Preserve selection using stable key
   - Update changedPRs map with detected changes
   - File: integrated in `update.go`
 
-- [ ] 7.4 Implement open in browser
+- [x] 7.4 Implement open in browser
   - Execute `gh pr view --web <number> --repo <owner/name>` on Enter
   - Use PR URL from model
   - File: integrated in `update.go`
 
-- [ ] 7.5 Implement draft toggle
+- [x] 7.5 Implement draft toggle
   - Filter drafts when toggled off
   - If selected PR becomes hidden, move selection to nearest visible
   - Persist preference in display state
   - File: integrated in `update.go`
 
-- [ ] 7.6 Implement display mode cycling
+- [x] 7.6 Implement display mode cycling
   - Cycle: full → compact → minimal → full
   - Update view rendering based on mode
   - File: integrated in `update.go` and `list.go`
 
-- [ ] 7.7 Implement organization toggle
+- [x] 7.7 Implement organization toggle
   - `o` toggles current org collapsed/expanded
   - `O` toggles all orgs
   - If selected PR becomes hidden, move selection to nearest visible
@@ -421,20 +421,20 @@
 
 ## Phase 8: Advanced Features
 
-- [ ] 8.1 Implement watch mode
+- [x] 8.1 Implement watch mode
   - Toggle with `w` key
   - Use Bubble Tea tick command for periodic refresh
   - Configurable interval from config (default 30s)
   - Update status bar to show watch mode active
   - File: `internal/tui/watch.go`
 
-- [ ] 8.2 Implement change highlighting
+- [x] 8.2 Implement change highlighting
   - When refresh detects changes, add PR keys to changedPRs map with timestamp
   - Apply highlight style to changed rows
   - Use Bubble Tea tick command to clear highlight after 2 seconds
   - File: integrated in `list.go` and `update.go`
 
-- [ ] 8.3 Implement update branch action (TUI wiring)
+- [x] 8.3 Implement update branch action (TUI wiring)
   - `u` key triggers update
   - Check eligibility: `mergeStateStatus == BEHIND` AND `mergeable == MERGEABLE`
   - Show modal with reason if not eligible
@@ -444,7 +444,7 @@
   - On completion: show success/failure modal, clear actionInProgress, trigger refresh
   - File: `internal/tui/actions.go`
 
-- [ ] 8.4 Implement concurrency control
+- [x] 8.4 Implement concurrency control
   - When `actionInProgress == true`:
     - Skip scheduled watch refreshes (queue for after)
     - Disable manual refresh
@@ -456,7 +456,7 @@
 
 ## Phase 9: Entry Point
 
-- [ ] 9.1 Create main.go
+- [x] 9.1 Create main.go
   - Parse CLI flags: `--config <path>`, `--version`, `--help`
   - Check TTY (require interactive terminal)
   - Check terminal size (minimum 80x24)
@@ -471,13 +471,13 @@
 
 ## Phase 10: Testing
 
-- [ ] 10.1 Write config tests
+- [x] 10.1 Write config tests
   - Test TOML parsing with valid config
   - Test default values applied correctly
   - Test validation errors: missing username, no orgs, invalid refresh interval
   - File: `internal/config/config_test.go`
 
-- [ ] 10.2 Write model tests
+- [x] 10.2 Write model tests
   - Test PR transformation from API response
   - Test days calculation
   - Test unresolved thread counting:
@@ -491,30 +491,31 @@
   - Test stable key generation
   - File: `internal/model/pr_test.go`
 
-- [ ] 10.3 Write change detection tests
+- [x] 10.3 Write change detection tests
   - Test detecting status changes
   - Test detecting new PRs
   - Test ignoring time-derived changes
   - File: `internal/model/diff_test.go`
 
-- [ ] 10.4 Write GitHub client tests
+- [x] 10.4 Write GitHub client tests
   - Mock GraphQL responses
   - Test pagination handling
   - Test rate limit extraction
   - Test error handling (network, rate limit)
   - File: `internal/github/client_test.go`
 
-- [ ] 10.5 Integration/smoke test plan (manual)
+- [x] 10.5 Integration/smoke test plan (manual)
   - Test with `gh` CLI not installed
   - Test with `gh` CLI not authenticated
   - Test with no open PRs
   - Test update-branch action
   - Test watch mode for 5+ minutes
   - Document in README
+  - README now includes a manual smoke test checklist for these scenarios
 
 ## Phase 11: Documentation
 
-- [ ] 11.1 Create README
+- [x] 11.1 Create README
   - Installation instructions (make install, go install)
   - Prerequisites (gh CLI, authentication)
   - Configuration guide with examples
@@ -524,7 +525,7 @@
 
 ## Phase 12: Polish
 
-- [ ] 12.1 Handle edge cases
+- [x] 12.1 Handle edge cases
   - Empty PR list (friendly message: "No open PRs - nice work! 🎉")
   - Network errors (show in status bar, keep data)
   - Very long titles (truncation with ellipsis)
@@ -532,21 +533,22 @@
   - No TTY (exit with clear error)
   - File: various
 
-- [ ] 12.2 Add loading states
+- [x] 12.2 Add loading states
   - Initial load spinner
   - Refresh spinner (in status bar)
   - Update branch busy state
   - File: integrated in components
 
-- [ ] 12.3 Add empty state
+- [x] 12.3 Add empty state
   - Centered "No open PRs - nice work! 🎉" message
   - Still show status bar and keybindings
   - File: `internal/tui/list.go`
 
-- [ ] 12.4 Final testing and cleanup
+- [x] 12.4 Final testing and cleanup
   - Run on actual PRs across multiple orgs
   - Test all key bindings work correctly
   - Test watch mode stability
   - Test update branch with actual PR
   - Clean up any debug code
   - Run `go vet` and `staticcheck`
+  - User closed remaining manual verification during archive; automated checks (`go test`, `go vet`, `staticcheck`) passed in this session

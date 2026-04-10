@@ -30,8 +30,6 @@ type Model struct {
 
 	// Selection - track by stable key per spec
 	SelectedKey string
-	// selectedIdx is derived from SelectedKey for rendering
-	selectedIdx int
 
 	// Display settings
 	DisplayMode model.DisplayMode

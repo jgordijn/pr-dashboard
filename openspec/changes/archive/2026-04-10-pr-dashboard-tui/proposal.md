@@ -55,7 +55,7 @@ A Go-based TUI application using the Charm stack (Bubble Tea, Lip Gloss, Bubbles
 
 ### Files Created
 ```
-~/projects/ahold/pr-management/
+~/projects/pr-management/
 ├── cmd/
 │   └── pr-dashboard/
 │       └── main.go                 # Entry point, CLI flags
