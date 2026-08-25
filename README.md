@@ -6,9 +6,11 @@ A terminal UI for monitoring your GitHub pull requests across one or more organi
 
 ## Features
 
+- Project-first `repository#number` identity on every pull request
+- A compact CI/review/merge symbol triad with a selected-row decoder
 - Group pull requests by organization
 - Vim-style and arrow-key navigation
-- Full, compact, and minimal display modes
+- Responsive full, compact, and minimal display modes
 - Draft visibility toggle
 - Watch mode with refresh + change highlighting
 - Open the selected PR in your browser
@@ -79,6 +81,7 @@ login = "your-org"
 [display]
 show_drafts = true
 initial_mode = "full"
+ascii = false
 
 [notifications]
 highlight_changes = true
@@ -91,7 +94,20 @@ highlight_changes = true
 - `organizations[].login`: one or more GitHub organizations to monitor
 - `display.show_drafts`: show draft PRs, default `true`
 - `display.initial_mode`: `full`, `compact`, or `minimal`, default `full`
+- `display.ascii`: use a pure-ASCII status vocabulary for terminals with ambiguous Unicode widths, default `false`
 - `notifications.highlight_changes`: briefly highlight changed PRs after refresh, default `true`
+
+## Status language
+
+Each row keeps the repository and a fixed three-slot status triad visible:
+
+| Slot | Good | Attention | Bad | None/unknown |
+|---|---|---|---|---|
+| CI | `✓` passing | `◐` pending | `✗` failing | `·` none |
+| Review | `✓` approved | `?` required | `!` changes | `·` none |
+| Merge | `✓` ready | `↓` behind, `⊘` blocked, `~` unstable | `≠` conflicts | `?` unknown, `○` draft |
+
+The gutter uses `▶` for the selected row and `●` for recently changed data. `◈n` is the unresolved-thread count. The status bar spells out the selected row's symbols, and `?` opens the complete legend. Set `display.ascii = true` for the equivalent ASCII vocabulary.
 
 ## Usage
 

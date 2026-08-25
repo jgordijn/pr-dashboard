@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/jgordijn/pr-dashboard/internal/config"
 	"github.com/jgordijn/pr-dashboard/internal/model"
 )
@@ -59,7 +61,7 @@ func TestViewNoModal(t *testing.T) {
 	}
 
 	// Verify status bar has help hint
-	if !strings.Contains(view, "Press ? for help") {
+	if !strings.Contains(view, "?help") {
 		t.Error("expected status bar to contain help hint")
 	}
 }
@@ -281,8 +283,8 @@ func TestRenderOrgHeader(t *testing.T) {
 				t.Errorf("expected org name %s in header", tc.group.Organization)
 			}
 
-			// Verify PR count
-			if !strings.Contains(header, "PRs") {
+			// Verify compact PR count.
+			if !strings.Contains(header, fmt.Sprintf(" %d", len(tc.group.PRs))) {
 				t.Error("expected PR count in header")
 			}
 
@@ -316,14 +318,14 @@ func TestRenderOrgHeaderDraftCount(t *testing.T) {
 	// With drafts shown - should show 3 PRs
 	m.ShowDrafts = true
 	header := m.renderOrgHeader(group)
-	if !strings.Contains(header, "3 PRs") {
+	if !strings.Contains(header, "org 3") {
 		t.Errorf("expected '3 PRs' when drafts shown, got: %s", header)
 	}
 
 	// With drafts hidden - should show 2 PRs
 	m.ShowDrafts = false
 	header = m.renderOrgHeader(group)
-	if !strings.Contains(header, "2 PRs") {
+	if !strings.Contains(header, "org 2") {
 		t.Errorf("expected '2 PRs' when drafts hidden, got: %s", header)
 	}
 }
@@ -351,11 +353,11 @@ func TestRenderPRRow(t *testing.T) {
 		},
 		{
 			mode:     model.DisplayModeCompact,
-			contains: []string{"#42", "Fix important bug", "developer"},
+			contains: []string{"#42", "Fix important bug", "✓"},
 		},
 		{
 			mode:     model.DisplayModeMinimal,
-			contains: []string{"#42", "Fix important bug", "developer"},
+			contains: []string{"#42", "Fix important bug", "✓"},
 		},
 	}
 
@@ -449,7 +451,7 @@ func TestRenderPRRowFull(t *testing.T) {
 				Author:  "dev",
 				IsDraft: true,
 			},
-			contains: []string{"#1", "Draft feature", "dev", "[DRAFT]"},
+			contains: []string{"#1", "Draft feature", "dev", "○"},
 		},
 		{
 			name: "without draft badge",
@@ -472,7 +474,7 @@ func TestRenderPRRowFull(t *testing.T) {
 				Author:            "dev",
 				UnresolvedThreads: "5",
 			},
-			contains: []string{"#3", "threads:5"},
+			contains: []string{"#3", "◈5"},
 		},
 		{
 			name: "without threads when zero",
@@ -483,7 +485,7 @@ func TestRenderPRRowFull(t *testing.T) {
 				Author:            "dev",
 				UnresolvedThreads: "0",
 			},
-			excludes: []string{"threads:"},
+			excludes: []string{"◈"},
 		},
 		{
 			name: "with truncated threads count",
@@ -494,7 +496,7 @@ func TestRenderPRRowFull(t *testing.T) {
 				Author:            "dev",
 				UnresolvedThreads: "100+",
 			},
-			contains: []string{"threads:100+"},
+			contains: []string{"◈99+"},
 		},
 	}
 
@@ -540,9 +542,9 @@ func TestRenderPRRowCompact(t *testing.T) {
 		t.Error("expected author")
 	}
 
-	// Should have separator
-	if !strings.Contains(row, "|") {
-		t.Error("expected separator")
+	// Should retain the complete positional status triad.
+	if !strings.Contains(row, "✓") {
+		t.Error("expected status triad")
 	}
 }
 
@@ -565,7 +567,7 @@ func TestRenderPRRowMinimal(t *testing.T) {
 				DaysOpen: 2,
 				IsDraft:  false,
 			},
-			contains: "[Ready]",
+			contains: "· · ?",
 		},
 		{
 			name: "draft PR",
@@ -577,7 +579,7 @@ func TestRenderPRRowMinimal(t *testing.T) {
 				DaysOpen: 1,
 				IsDraft:  true,
 			},
-			contains: "[Draft]",
+			contains: "· · ○",
 		},
 	}
 
@@ -588,8 +590,8 @@ func TestRenderPRRowMinimal(t *testing.T) {
 			if !strings.Contains(row, tc.contains) {
 				t.Errorf("expected %q in row, got: %s", tc.contains, row)
 			}
-			if !strings.Contains(row, tc.pr.Author) {
-				t.Error("expected author in minimal row")
+			if !strings.Contains(row, fmt.Sprintf("#%d", tc.pr.Number)) {
+				t.Error("expected identity in minimal row")
 			}
 		})
 	}
@@ -621,13 +623,13 @@ func TestTruncateTitle(t *testing.T) {
 			name:     "long title truncated",
 			title:    "This is a very long title that needs truncation",
 			maxLen:   20,
-			expected: "This is a very lo...",
+			expected: "This is a very long…",
 		},
 		{
 			name:     "very short maxLen",
 			title:    "Hello World",
 			maxLen:   5,
-			expected: "He...",
+			expected: "Hell…",
 		},
 		{
 			name:     "empty title",
@@ -644,8 +646,8 @@ func TestTruncateTitle(t *testing.T) {
 				t.Errorf("expected %q, got %q", tc.expected, result)
 			}
 			// Verify truncated title doesn't exceed maxLen
-			if len(result) > tc.maxLen {
-				t.Errorf("result length %d exceeds maxLen %d", len(result), tc.maxLen)
+			if lipgloss.Width(result) > tc.maxLen {
+				t.Errorf("result width %d exceeds maxLen %d", lipgloss.Width(result), tc.maxLen)
 			}
 		})
 	}
@@ -845,13 +847,10 @@ func TestRenderStatusBar(t *testing.T) {
 	// Basic status bar
 	bar := m.renderStatusBar()
 
-	// Should contain display mode
-	if !strings.Contains(bar, "Mode:") {
-		t.Error("expected display mode in status bar")
+	if !strings.Contains(bar, "full") {
+		t.Error("expected compact display mode in status bar")
 	}
-
-	// Should contain help hint
-	if !strings.Contains(bar, "Press ? for help") {
+	if !strings.Contains(bar, "?help") {
 		t.Error("expected help hint in status bar")
 	}
 }
@@ -863,7 +862,7 @@ func TestRenderStatusBarWatchMode(t *testing.T) {
 
 	bar := m.renderStatusBar()
 
-	if !strings.Contains(bar, "Watch:") {
+	if !strings.Contains(bar, "↻") {
 		t.Error("expected watch mode indicator")
 	}
 	if !strings.Contains(bar, "30s") {
@@ -878,9 +877,6 @@ func TestRenderStatusBarLastRefresh(t *testing.T) {
 
 	bar := m.renderStatusBar()
 
-	if !strings.Contains(bar, "Last refresh:") {
-		t.Error("expected last refresh time")
-	}
 	if !strings.Contains(bar, "14:30") {
 		t.Error("expected formatted time")
 	}
@@ -896,7 +892,7 @@ func TestRenderStatusBarRateLimit(t *testing.T) {
 
 	bar := m.renderStatusBar()
 
-	if !strings.Contains(bar, "Rate limit:") {
+	if !strings.Contains(bar, "⚠rl") {
 		t.Error("expected rate limit warning")
 	}
 	if !strings.Contains(bar, "50") {
@@ -914,7 +910,7 @@ func TestRenderStatusBarNoRateLimitWarning(t *testing.T) {
 
 	bar := m.renderStatusBar()
 
-	if strings.Contains(bar, "Rate limit:") {
+	if strings.Contains(bar, "⚠rl") {
 		t.Error("should not show rate limit when remaining > 100")
 	}
 }
@@ -959,7 +955,7 @@ func TestRenderMainView(t *testing.T) {
 	}
 
 	// Should contain status bar
-	if !strings.Contains(view, "Press ? for help") {
+	if !strings.Contains(view, "?help") {
 		t.Error("expected status bar")
 	}
 }
@@ -978,7 +974,7 @@ func TestRenderModal(t *testing.T) {
 		{
 			name:      "help modal",
 			modalType: ModalHelp,
-			contains:  []string{"Keyboard Shortcuts", "j/↓", "k/↑", "q/Esc"},
+			contains:  []string{"Keys & Symbols", "j/k/↑/↓", "q/Esc", "≠ conflicts"},
 		},
 		{
 			name:      "success modal",
@@ -1027,7 +1023,7 @@ func TestRenderHelpModal(t *testing.T) {
 	help := m.renderHelpModal()
 
 	// Check all navigation keys
-	navKeys := []string{"j/↓", "k/↑", "gg", "G", "o", "O"}
+	navKeys := []string{"j/k/↑/↓", "gg/G", "o/O"}
 	for _, key := range navKeys {
 		if !strings.Contains(help, key) {
 			t.Errorf("expected navigation key %q in help", key)
@@ -1058,8 +1054,8 @@ func TestRenderHelpModal(t *testing.T) {
 		}
 	}
 
-	// Check section headers
-	sections := []string{"Navigation:", "Actions:", "Display:", "Other:"}
+	// Check compact section headers
+	sections := []string{"Keys & Symbols", "Symbols", "CI", "Review", "Merge", "Other"}
 	for _, section := range sections {
 		if !strings.Contains(help, section) {
 			t.Errorf("expected section %q in help", section)

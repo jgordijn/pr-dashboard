@@ -25,17 +25,17 @@ const (
 type Styles struct {
 	// Header styles
 	HeaderStyle lipgloss.Style
-	// Selection style (reverse video)
+	// Selection style (bold; the gutter carries selection identity)
 	SelectedStyle lipgloss.Style
 	// Draft PR style (dimmed)
 	DraftStyle lipgloss.Style
-	// Changed PR style (highlight background)
+	// Changed PR style (highlight foreground; the gutter remains distinct)
 	ChangedStyle lipgloss.Style
 	// Status styles
-	StatusPassingStyle        lipgloss.Style
-	StatusFailingStyle        lipgloss.Style
-	StatusPendingStyle        lipgloss.Style
-	StatusNoneStyle           lipgloss.Style
+	StatusPassingStyle          lipgloss.Style
+	StatusFailingStyle          lipgloss.Style
+	StatusPendingStyle          lipgloss.Style
+	StatusNoneStyle             lipgloss.Style
 	StatusChangesRequestedStyle lipgloss.Style
 	// Merge status styles
 	MergeReadyStyle    lipgloss.Style
@@ -44,8 +44,8 @@ type Styles struct {
 	MergeConflictStyle lipgloss.Style
 	MergeUnknownStyle  lipgloss.Style
 	// Modal styles
-	ModalStyle      lipgloss.Style
-	ModalTitleStyle lipgloss.Style
+	ModalStyle        lipgloss.Style
+	ModalTitleStyle   lipgloss.Style
 	ModalSuccessStyle lipgloss.Style
 	ModalErrorStyle   lipgloss.Style
 	// Status bar style
@@ -70,14 +70,14 @@ func NewStyles() *Styles {
 			Foreground(ColorWhite),
 
 		SelectedStyle: lipgloss.NewStyle().
-			Background(ColorHighlight).
+			Bold(true).
 			Foreground(ColorWhite),
 
 		DraftStyle: lipgloss.NewStyle().
 			Foreground(ColorDim),
 
 		ChangedStyle: lipgloss.NewStyle().
-			Background(ColorHighlight),
+			Foreground(ColorHighlight),
 
 		StatusPassingStyle: lipgloss.NewStyle().
 			Foreground(ColorGreen),
@@ -142,7 +142,7 @@ func NewStyles() *Styles {
 		SpinnerStyle: lipgloss.NewStyle().
 			Foreground(ColorHighlight),
 
-		CollapsedIndicator: ">",
-		ExpandedIndicator:  "v",
+		CollapsedIndicator: "▸",
+		ExpandedIndicator:  "▾",
 	}
 }

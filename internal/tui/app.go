@@ -21,8 +21,9 @@ type Model struct {
 	Client *github.Client
 	// Key bindings
 	Keys *KeyMap
-	// Styles
-	Styles *Styles
+	// Styles and status-symbol vocabulary
+	Styles  *Styles
+	Symbols SymbolSet
 
 	// PR Data
 	Groups     []model.PRGroup
@@ -41,7 +42,6 @@ type Model struct {
 
 	// Account switching
 	Accounts []config.GHAccount
-
 
 	// Status
 	LastRefresh time.Time
@@ -82,11 +82,17 @@ func NewModel(cfg *config.Config, client *github.Client) Model {
 	s.Spinner = spinner.Dot
 	s.Style = NewStyles().SpinnerStyle
 
+	symbols := UnicodeSymbols
+	if cfg.Display.ASCII {
+		symbols = ASCIISymbols
+	}
+
 	return Model{
 		Config:      cfg,
 		Client:      client,
 		Keys:        NewKeyMap(),
 		Styles:      NewStyles(),
+		Symbols:     symbols,
 		DisplayMode: displayMode,
 		ShowDrafts:  cfg.Display.ShowDrafts,
 		WatchMode:   false,

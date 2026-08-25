@@ -18,6 +18,7 @@ login = "organisation"               # Required: GitHub org login (used in searc
 [display]
 show_drafts = true                   # Optional: show draft PRs, default true
 initial_mode = "full"                # Optional: "full", "compact", "minimal", default "full"
+ascii = false                         # Optional: use pure-ASCII status symbols, default false
 
 [notifications]
 highlight_changes = true             # Optional: highlight changed PRs, default true

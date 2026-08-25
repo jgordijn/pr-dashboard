@@ -47,6 +47,7 @@ type OrganizationConfig struct {
 type DisplayConfig struct {
 	ShowDrafts  bool   `toml:"show_drafts"`  // Optional: default true
 	InitialMode string `toml:"initial_mode"` // Optional: "full", "compact", "minimal", default "full"
+	ASCII       bool   `toml:"ascii"`        // Optional: use pure-ASCII status symbols, default false
 }
 
 // NotificationsConfig contains notification-related settings.

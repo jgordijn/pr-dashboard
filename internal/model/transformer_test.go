@@ -183,7 +183,8 @@ func TestTransformPR_MergeStatus(t *testing.T) {
 		mergeStateStatus *string
 		want             MergeStatus
 	}{
-		{"draft overrides all", true, ptr("MERGEABLE"), ptr("CLEAN"), MergeStatusDraft},
+		{"draft overrides clean", true, ptr("MERGEABLE"), ptr("CLEAN"), MergeStatusDraft},
+		{"conflicts remain visible on draft", true, ptr("CONFLICTING"), ptr("DIRTY"), MergeStatusConflicts},
 		{"clean", false, ptr("MERGEABLE"), ptr("CLEAN"), MergeStatusReady},
 		{"behind", false, ptr("MERGEABLE"), ptr("BEHIND"), MergeStatusBehind},
 		{"blocked", false, ptr("MERGEABLE"), ptr("BLOCKED"), MergeStatusBlocked},

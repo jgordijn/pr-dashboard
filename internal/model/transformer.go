@@ -133,7 +133,10 @@ func mapCheckStatus(commits github.CommitConnection) CheckStatus {
 
 // deriveMergeStatus derives the MergeStatus from API values.
 func deriveMergeStatus(isDraft bool, mergeable, mergeStateStatus *string) MergeStatus {
-	// Draft status overrides everything
+	// Conflicts are more important than draft state; draft remains a visual style.
+	if mergeable != nil && *mergeable == "CONFLICTING" {
+		return MergeStatusConflicts
+	}
 	if isDraft {
 		return MergeStatusDraft
 	}
@@ -141,11 +144,6 @@ func deriveMergeStatus(isDraft bool, mergeable, mergeStateStatus *string) MergeS
 	// Handle null/unknown mergeable
 	if mergeable == nil {
 		return MergeStatusUnknown
-	}
-
-	// Check for conflicts first
-	if *mergeable == "CONFLICTING" {
-		return MergeStatusConflicts
 	}
 
 	// Handle unknown mergeable state

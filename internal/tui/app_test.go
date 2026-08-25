@@ -54,6 +54,14 @@ func TestNewModel(t *testing.T) {
 	}
 }
 
+func TestNewModelSelectsASCIICharacters(t *testing.T) {
+	cfg := &config.Config{Display: config.DisplayConfig{InitialMode: "full", ASCII: true}}
+	m := NewModel(cfg, nil)
+	if m.Symbols.MergeConflicts != "X" || m.Symbols.Selected != ">" {
+		t.Fatalf("unexpected ASCII symbols: %+v", m.Symbols)
+	}
+}
+
 func TestNewModelDisplayModes(t *testing.T) {
 	tests := []struct {
 		mode     string

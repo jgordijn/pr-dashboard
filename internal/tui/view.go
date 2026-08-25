@@ -2,9 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/rivo/uniseg"
 
 	"github.com/jgordijn/pr-dashboard/internal/model"
 )
@@ -43,6 +46,9 @@ func (m Model) View() string {
 // renderHeader renders the application header.
 func (m Model) renderHeader() string {
 	title := "PR Dashboard"
+	if m.TotalCount > 0 {
+		title += fmt.Sprintf(" · %d", m.TotalCount)
+	}
 	if m.IsLoading {
 		title += " " + m.Spinner.View()
 	}
@@ -92,136 +98,287 @@ func (m Model) renderPRList() string {
 	return b.String()
 }
 
-// renderOrgHeader renders an organization header with collapse indicator.
+// renderOrgHeader renders an organization header and, when collapsed, a risk rollup.
 func (m Model) renderOrgHeader(group model.PRGroup) string {
-	indicator := m.Styles.ExpandedIndicator
+	indicator := m.Symbols.Expanded
 	if group.Collapsed {
-		indicator = m.Styles.CollapsedIndicator
+		indicator = m.Symbols.Collapsed
 	}
-
-	// Count visible PRs in this group
-	visibleCount := 0
+	visible, failing, behind, threads := 0, 0, 0, 0
 	for _, pr := range group.PRs {
-		if m.ShowDrafts || !pr.IsDraft {
-			visibleCount++
+		if !m.ShowDrafts && pr.IsDraft {
+			continue
+		}
+		visible++
+		if pr.CheckStatus == model.CheckStatusFailing {
+			failing++
+		}
+		if pr.MergeStatus == model.MergeStatusBehind {
+			behind++
+		}
+		threads += pr.UnresolvedCount
+		if pr.UnresolvedCount == 0 {
+			n, _ := strconv.Atoi(strings.TrimSuffix(pr.UnresolvedThreads, "+"))
+			threads += n
 		}
 	}
-
-	header := fmt.Sprintf("%s %s (%d PRs)", indicator, group.Organization, visibleCount)
+	header := fmt.Sprintf("%s %s %d", indicator, group.Organization, visible)
+	width := m.availableWidth()
+	if group.Collapsed {
+		var risk []string
+		if failing > 0 {
+			risk = append(risk, fmt.Sprintf("%s%d", m.Symbols.CIFailing, failing))
+		}
+		if behind > 0 {
+			risk = append(risk, fmt.Sprintf("%s%d", m.Symbols.MergeBehind, behind))
+		}
+		if threads > 0 {
+			risk = append(risk, fmt.Sprintf("%s%d", m.Symbols.Thread, threads))
+		}
+		if len(risk) > 0 {
+			right := strings.Join(risk, " ")
+			fill := "─"
+			if m.Config.Display.ASCII {
+				fill = "-"
+			}
+			fillWidth := width - lipgloss.Width(header) - lipgloss.Width(right) - 2
+			if fillWidth > 0 {
+				header += " " + strings.Repeat(fill, fillWidth) + " " + right
+			} else {
+				header += " " + right
+			}
+		}
+	}
+	if lipgloss.Width(header) > width {
+		header = truncateCells(header, width)
+	}
 	return m.Styles.HeaderStyle.Render(header)
 }
 
-// renderPRRow renders a single PR row based on display mode.
+type rowLayout struct {
+	id, title, author, age           int
+	showAuthor, showAge, showThreads bool
+}
+
+func (m Model) layoutFor(pr model.PullRequest) rowLayout {
+	width := m.availableWidth()
+	capID := 24
+	if width < 40 {
+		capID = 12
+	}
+	prs := m.visiblePRs()
+	if len(prs) == 0 {
+		prs = []model.PullRequest{pr}
+	}
+	layout := rowLayout{showAuthor: m.DisplayMode == model.DisplayModeFull && width >= 80, showAge: m.DisplayMode != model.DisplayModeMinimal && width >= 60, showThreads: m.DisplayMode != model.DisplayModeMinimal && width >= 60}
+	for _, item := range prs {
+		idw := lipgloss.Width(truncateIdentity(item.Repository, item.Number, capID))
+		if idw > layout.id {
+			layout.id = idw
+		}
+		if layout.showAuthor {
+			w := lipgloss.Width(truncateCells(item.Author, 12))
+			if w > layout.author {
+				layout.author = w
+			}
+		}
+		if layout.showAge {
+			w := lipgloss.Width(ageString(item))
+			if w > layout.age {
+				layout.age = w
+			}
+		}
+	}
+	if layout.id > capID {
+		layout.id = capID
+	}
+	if layout.age == 0 {
+		layout.age = 2
+	}
+	fixed := 2 + layout.id + 5
+	fields := 3 // gutter, id, title, triad => three separators
+	if layout.showAuthor {
+		fixed += layout.author
+		fields++
+	}
+	if layout.showAge {
+		fixed += layout.age
+		fields++
+	}
+	if layout.showThreads {
+		fixed += 4
+		fields++
+	}
+	layout.title = max(1, width-fixed-fields)
+	return layout
+}
+
+// renderPRRow renders a single, project-first, one-line PR row.
 func (m Model) renderPRRow(pr model.PullRequest) string {
-	isSelected := pr.Key == m.SelectedKey
-	isChanged := false
-	if _, ok := m.ChangedKeys[pr.Key]; ok {
-		isChanged = true
+	width := m.availableWidth()
+	if width < 24 {
+		return truncateCells("Terminal too narrow (minimum 24 columns)", width)
 	}
-
-	var row string
-	switch m.DisplayMode {
-	case model.DisplayModeFull:
-		row = m.renderPRRowFull(pr)
-	case model.DisplayModeCompact:
-		row = m.renderPRRowCompact(pr)
-	case model.DisplayModeMinimal:
-		row = m.renderPRRowMinimal(pr)
-	default:
-		row = m.renderPRRowFull(pr)
+	selected := pr.Key == m.SelectedKey
+	_, changed := m.ChangedKeys[pr.Key]
+	gutter := "  "
+	if selected {
+		gutter = m.Symbols.Selected + " "
 	}
-
-	// Apply styling
-	if isSelected {
+	if changed {
+		gutter = " " + m.Symbols.Changed
+	}
+	if selected && changed {
+		gutter = m.Symbols.Selected + m.Symbols.Changed
+	}
+	layout := m.layoutFor(pr)
+	rawID := truncateIdentity(pr.Repository, pr.Number, layout.id)
+	if lipgloss.Width(rawID) > layout.id {
+		return truncateCells("Terminal too narrow for PR number", width)
+	}
+	id := padRight(rawID, layout.id)
+	title := padRight(truncateCells(pr.Title, layout.title), layout.title)
+	parts := []string{gutter, id, title}
+	if layout.showAuthor {
+		parts = append(parts, padRight(truncateCells(pr.Author, layout.author), layout.author))
+	}
+	if layout.showAge {
+		parts = append(parts, padLeft(ageString(pr), layout.age))
+	}
+	parts = append(parts, m.renderStatusTriad(pr))
+	if layout.showThreads && pr.UnresolvedThreads != "" && pr.UnresolvedThreads != "0" {
+		parts = append(parts, padLeft(m.threadLabel(pr.UnresolvedThreads), 4))
+	}
+	row := strings.Join(parts, " ")
+	if selected {
 		row = m.Styles.SelectedStyle.Render(row)
-	} else if isChanged {
+	} else if changed {
 		row = m.Styles.ChangedStyle.Render(row)
 	} else if pr.IsDraft {
 		row = m.Styles.DraftStyle.Render(row)
 	}
-
 	return row
 }
 
-// renderPRRowFull renders a PR row in full display mode.
-// Format: #123 Title [Draft] Author 3d | Checks | Reviews | Merge | Threads
-func (m Model) renderPRRowFull(pr model.PullRequest) string {
-	var parts []string
+func (m Model) renderPRRowFull(pr model.PullRequest) string    { return m.renderPRRow(pr) }
+func (m Model) renderPRRowCompact(pr model.PullRequest) string { return m.renderPRRow(pr) }
+func (m Model) renderPRRowMinimal(pr model.PullRequest) string { return m.renderPRRow(pr) }
 
-	// PR number and title
-	title := m.truncateTitle(pr.Title, 40)
-	prInfo := fmt.Sprintf("#%d %s", pr.Number, title)
-	parts = append(parts, prInfo)
-
-	// Draft badge
-	if pr.IsDraft {
-		parts = append(parts, "[DRAFT]")
+func (m Model) availableWidth() int {
+	if m.Width > 0 {
+		return m.Width
 	}
-
-	// Author and age
-	parts = append(parts, pr.Author)
-	parts = append(parts, fmt.Sprintf("%dd", pr.DaysOpen))
-
-	// Separator
-	parts = append(parts, "|")
-
-	// Check status
-	parts = append(parts, m.renderCheckStatus(pr.CheckStatus))
-
-	// Review status with reviewers
-	parts = append(parts, m.renderReviewStatus(pr.ReviewStatus, pr.Reviewers))
-
-	// Merge status
-	parts = append(parts, m.renderMergeStatus(pr.MergeStatus))
-
-	// Unresolved threads
-	if pr.UnresolvedThreads != "0" {
-		parts = append(parts, fmt.Sprintf("threads:%s", pr.UnresolvedThreads))
-	}
-
-	return strings.Join(parts, " ")
+	return 80
 }
 
-// renderPRRowCompact renders a PR row in compact display mode.
-// Format: #123 Title Author | Icons only with counts
-func (m Model) renderPRRowCompact(pr model.PullRequest) string {
-	var parts []string
-
-	// PR number and title
-	title := m.truncateTitle(pr.Title, 30)
-	parts = append(parts, fmt.Sprintf("#%d %s", pr.Number, title))
-
-	// Author
-	parts = append(parts, pr.Author)
-
-	// Separator
-	parts = append(parts, "|")
-
-	// Status icons
-	parts = append(parts, m.getCheckIcon(pr.CheckStatus))
-	parts = append(parts, m.getReviewIcon(pr.ReviewStatus))
-	parts = append(parts, m.getMergeIcon(pr.MergeStatus))
-
-	return strings.Join(parts, " ")
+func padRight(s string, width int) string {
+	return s + strings.Repeat(" ", max(0, width-lipgloss.Width(s)))
+}
+func padLeft(s string, width int) string {
+	return strings.Repeat(" ", max(0, width-lipgloss.Width(s))) + s
 }
 
-// renderPRRowMinimal renders a PR row in minimal display mode.
-// Format: #123 Title Author
-func (m Model) renderPRRowMinimal(pr model.PullRequest) string {
-	title := m.truncateTitle(pr.Title, 50)
-	status := "Ready"
-	if pr.IsDraft {
-		status = "Draft"
+func ageString(pr model.PullRequest) string {
+	if pr.CreatedAt.IsZero() {
+		return fmt.Sprintf("%dd", pr.DaysOpen)
 	}
-	return fmt.Sprintf("#%d %s [%s] %s %dd", pr.Number, title, status, pr.Author, pr.DaysOpen)
+	d := time.Since(pr.CreatedAt)
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 48*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	days := int(d.Hours() / 24)
+	if days < 14 {
+		return fmt.Sprintf("%dd", days)
+	}
+	if days < 60 {
+		return fmt.Sprintf("%dw", days/7)
+	}
+	if days < 365 {
+		return fmt.Sprintf("%dmo", days/30)
+	}
+	return fmt.Sprintf("%dy", days/365)
 }
 
-// truncateTitle truncates a title with ellipsis if too long.
-func (m Model) truncateTitle(title string, maxLen int) string {
-	if len(title) <= maxLen {
-		return title
+func truncateIdentity(repository string, number, max int) string {
+	suffix := fmt.Sprintf("#%d", number)
+	if repository == "" {
+		return suffix
 	}
-	return title[:maxLen-3] + "..."
+	full := repository + suffix
+	if lipgloss.Width(full) <= max {
+		return full
+	}
+	return truncateCellsLeft(repository, max-lipgloss.Width(suffix)) + suffix
+}
+
+func truncateCellsLeft(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	g := uniseg.NewGraphemes(s)
+	var clusters []string
+	for g.Next() {
+		clusters = append(clusters, g.Str())
+	}
+	result := ""
+	for i := len(clusters) - 1; i >= 0; i-- {
+		if lipgloss.Width(clusters[i]+result) > width-1 {
+			break
+		}
+		result = clusters[i] + result
+	}
+	return "…" + result
+}
+
+func truncateCells(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	g := uniseg.NewGraphemes(s)
+	result := ""
+	for g.Next() {
+		next := result + g.Str()
+		if lipgloss.Width(next) > width-1 {
+			break
+		}
+		result = next
+	}
+	return result + "…"
+}
+
+func (m Model) truncateTitle(title string, maxLen int) string { return truncateCells(title, maxLen) }
+
+func (m Model) renderStatusTriad(pr model.PullRequest) string {
+	ci, cis, _ := m.checkSymbol(pr.CheckStatus)
+	review, rs, _ := m.reviewSymbol(pr.ReviewStatus)
+	merge, ms, _ := m.mergeSymbol(pr)
+	return strings.Join([]string{cis.Render(ci), rs.Render(review), ms.Render(merge)}, " ")
+}
+
+func (m Model) threadLabel(value string) string {
+	n, err := strconv.Atoi(strings.TrimSuffix(value, "+"))
+	if err == nil && n > 99 {
+		value = "99+"
+	}
+	return m.Symbols.Thread + value
 }
 
 // renderCheckStatus renders the check status with color.
@@ -356,36 +513,117 @@ func (m Model) getMergeIcon(status model.MergeStatus) string {
 	}
 }
 
-// renderStatusBar renders the bottom status bar.
+// renderSelectedDecoder explains the positional symbols for the selected PR.
+func (m Model) renderSelectedDecoder() string { return m.renderSelectedDecoderLevel(0) }
+
+func (m Model) renderSelectedDecoderLevel(level int) string {
+	pr := m.SelectedPR()
+	if pr == nil {
+		return ""
+	}
+	ci, cis, ciWord := m.checkSymbol(pr.CheckStatus)
+	review, rs, reviewWord := m.reviewSymbol(pr.ReviewStatus)
+	merge, ms, mergeWord := m.mergeSymbol(*pr)
+	status := ms.Render(merge) + mergeWord
+	if level < 2 {
+		status = strings.Join([]string{cis.Render(ci) + ciWord, rs.Render(review) + reviewWord, status}, " ")
+	}
+	parts := []string{fmt.Sprintf("%s#%d", pr.Repository, pr.Number), status}
+	if pr.IsDraft && mergeWord != "draft" {
+		parts = append(parts, "draft")
+	}
+	if pr.CanUpdateBranch() && !pr.IsDraft {
+		parts = append(parts, "— press u to update")
+	}
+	if level == 0 && len(pr.Reviewers) > 0 {
+		reviewers := make([]string, 0, min(2, len(pr.Reviewers)))
+		for _, reviewer := range pr.Reviewers[:min(2, len(pr.Reviewers))] {
+			if strings.HasPrefix(reviewer, "team:") {
+				reviewers = append(reviewers, "/"+strings.TrimPrefix(reviewer, "team:"))
+			} else {
+				reviewers = append(reviewers, "@"+reviewer)
+			}
+		}
+		label := strings.Join(reviewers, ", ")
+		if len(pr.Reviewers) > 2 {
+			label += fmt.Sprintf(" +%d", len(pr.Reviewers)-2)
+		}
+		parts = append(parts, label)
+	}
+	if level < 3 && pr.UnresolvedThreads != "" && pr.UnresolvedThreads != "0" {
+		parts = append(parts, m.threadLabel(pr.UnresolvedThreads))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func (m Model) effectiveModeLabel() string {
+	label := m.DisplayMode.String()
+	effective := label
+	if m.availableWidth() < 40 {
+		effective = "minimal"
+	} else if m.availableWidth() < 80 && m.DisplayMode == model.DisplayModeFull {
+		effective = "compact"
+	}
+	if effective == label {
+		return label
+	}
+	arrow := "→"
+	if m.Config.Display.ASCII {
+		arrow = ">"
+	}
+	return label + arrow + effective
+}
+
+// renderStatusBar renders compact chrome and reserves the discoverability hint.
 func (m Model) renderStatusBar() string {
-	var parts []string
-
-	// Active account
-	parts = append(parts, fmt.Sprintf("Account: %s", m.Config.General.Username))
-
-	// Watch mode indicator
+	help := "?help"
+	limit := m.availableWidth() - 2
+	username := "@" + m.Config.General.Username
+	watch := ""
 	if m.WatchMode {
-		parts = append(parts, fmt.Sprintf("Watch: %ds", m.Config.General.RefreshInterval))
+		watch = fmt.Sprintf("↻%ds", m.Config.General.RefreshInterval)
 	}
-
-	// Display mode
-	parts = append(parts, fmt.Sprintf("Mode: %s", m.DisplayMode))
-
-	// Last refresh time
+	mode := m.effectiveModeLabel()
+	clock := ""
 	if !m.LastRefresh.IsZero() {
-		parts = append(parts, fmt.Sprintf("Last refresh: %s", m.LastRefresh.Format("15:04")))
+		clock = m.LastRefresh.Format("15:04")
 	}
-
-	// Rate limit warning
+	rate := ""
 	if m.RateLimit.Remaining > 0 && m.RateLimit.Remaining <= 100 {
-		parts = append(parts, fmt.Sprintf("Rate limit: %d (resets %s)",
-			m.RateLimit.Remaining, m.RateLimit.ResetAt.Format("15:04")))
+		rate = fmt.Sprintf("⚠rl%d", m.RateLimit.Remaining)
 	}
-
-	// Help hint
-	parts = append(parts, "Press ? for help")
-
-	return m.Styles.StatusBarStyle.Render(strings.Join(parts, " | "))
+	joinLeft := func(parts ...string) string {
+		var kept []string
+		for _, p := range parts {
+			if p != "" {
+				kept = append(kept, p)
+			}
+		}
+		return strings.Join(kept, " ")
+	}
+	left := joinLeft(username, watch, mode, clock, rate)
+	for level := 0; level <= 3; level++ {
+		decoder := m.renderSelectedDecoderLevel(level)
+		if decoder == "" {
+			break
+		}
+		candidate := left + " │ " + decoder + " │ " + help
+		if lipgloss.Width(candidate) <= limit {
+			return m.Styles.StatusBarStyle.Render(candidate)
+		}
+	}
+	if baseline := left + " · " + help; lipgloss.Width(baseline) <= limit {
+		return m.Styles.StatusBarStyle.Render(baseline)
+	}
+	for _, candidateLeft := range []string{joinLeft(username, watch, mode, rate), joinLeft(username, watch, rate), joinLeft(username, rate), username} {
+		candidate := candidateLeft + " · " + help
+		if lipgloss.Width(candidate) <= limit {
+			return m.Styles.StatusBarStyle.Render(candidate)
+		}
+	}
+	userWidth := max(1, limit-lipgloss.Width(" · "+help))
+	left = truncateCells(username, userWidth)
+	return m.Styles.StatusBarStyle.Render(left + " · " + help)
 }
 
 // renderWithModal renders the main view with a modal overlay.
@@ -446,49 +684,30 @@ func (m Model) renderModal() string {
 	}
 }
 
-// renderHelpModal renders the help modal with key bindings.
+// renderHelpModal renders keybindings and the status language in an 80x24-friendly layout.
 func (m Model) renderHelpModal() string {
-	var b strings.Builder
-
-	b.WriteString(m.Styles.ModalTitleStyle.Render("Keyboard Shortcuts"))
-	b.WriteString("\n\n")
-
-	// Navigation
-	b.WriteString("Navigation:\n")
-	b.WriteString("  j/↓     Move down\n")
-	b.WriteString("  k/↑     Move up\n")
-	b.WriteString("  gg      Go to top\n")
-	b.WriteString("  G       Go to bottom\n")
-	b.WriteString("  o       Toggle org collapse\n")
-	b.WriteString("  O       Toggle all orgs\n")
-	b.WriteString("\n")
-
-	// Actions
-	b.WriteString("Actions:\n")
-	b.WriteString("  u       Update branch\n")
-	b.WriteString("  r       Refresh\n")
-	b.WriteString("  s       Switch account\n")
-	b.WriteString("  Enter   Open in browser\n")
-	b.WriteString("\n")
-
-	// Display
-	b.WriteString("Display:\n")
-	b.WriteString("  c       Cycle display mode\n")
-	b.WriteString("  d       Toggle drafts\n")
-	b.WriteString("  w       Toggle watch mode\n")
-	b.WriteString("\n")
-
-	// Other
-	b.WriteString("Other:\n")
-	b.WriteString("  ?       Help\n")
-	b.WriteString("  q/Esc   Quit\n")
-	b.WriteString("\n")
-
-	b.WriteString(m.Styles.DimStyle.Render("Press Enter, q, or Esc to dismiss"))
-
-	return m.Styles.ModalStyle.Render(b.String())
+	lines := []string{
+		m.Styles.ModalTitleStyle.Render("Keys & Symbols"),
+		"j/k/↑/↓ move   gg/G top/bottom   o/O collapse",
+		"u update       r refresh          Enter open",
+		"s account      c mode   d drafts  w watch",
+		"? help         q/Esc quit",
+		"",
+		"Symbols",
+		fmt.Sprintf("CI      %s passing  %s failing  %s pending  %s none", m.Symbols.CIPassing, m.Symbols.CIFailing, m.Symbols.CIPending, m.Symbols.CINone),
+		fmt.Sprintf("Review  %s approved %s changes  %s required %s none", m.Symbols.ReviewApproved, m.Symbols.ReviewChanges, m.Symbols.ReviewRequired, m.Symbols.ReviewNone),
+		fmt.Sprintf("Merge   %s ready    %s behind   %s blocked", m.Symbols.MergeReady, m.Symbols.MergeBehind, m.Symbols.MergeBlocked),
+		fmt.Sprintf("        %s conflicts %s unstable %s unknown %s draft", m.Symbols.MergeConflicts, m.Symbols.MergeUnstable, m.Symbols.MergeUnknown, m.Symbols.MergeDraft),
+		fmt.Sprintf("Gutter  %s selected  %s changed", m.Symbols.Selected, m.Symbols.Changed),
+		fmt.Sprintf("Other   %sn threads  age 45m/17h/3d", m.Symbols.Thread),
+		"ASCII   CI + x ~ -  Review + ! ? -",
+		"        Merge = v # X ~ ? o",
+		"Draft   row dimmed; ≠ wins merge slot on conflict",
+		"",
+		m.Styles.DimStyle.Render("Enter, q, or Esc dismisses"),
+	}
+	return m.Styles.ModalStyle.Render(strings.Join(lines, "\n"))
 }
-
 
 // renderAccountPickerModal renders the account picker modal.
 func (m Model) renderAccountPickerModal() string {
