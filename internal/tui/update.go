@@ -33,6 +33,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handlePRsLoaded(msg)
 
 	case PRsErrorMsg:
+		if msg.Account != "" && msg.Account != m.Config.General.Username {
+			return m, nil
+		}
 		m.IsLoading = false
 		m.Error = msg.Err
 		return m, nil
@@ -153,6 +156,14 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.Keys.ToggleGrouping):
 		return m.toggleGrouping()
 
+	case key.Matches(msg, m.Keys.CycleSort):
+		m = m.cycleSortField()
+		return m, nil
+
+	case key.Matches(msg, m.Keys.ToggleSort):
+		m = m.toggleSortDirection()
+		return m, nil
+
 	case key.Matches(msg, m.Keys.HideItem):
 		return m.hideFocusedItem()
 
@@ -207,6 +218,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handlePRsLoaded processes successfully loaded PR data.
 func (m Model) handlePRsLoaded(msg PRsLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Account != "" && msg.Account != m.Config.General.Username {
+		return m, nil
+	}
 	// Detect changes for highlighting
 	oldPRs := m.getAllPRs()
 	newPRs := getAllPRsFromGroups(msg.Groups)
@@ -218,13 +232,17 @@ func (m Model) handlePRsLoaded(msg PRsLoadedMsg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, clearHighlightCmd(change.Key))
 	}
 
-	// Preserve independent organization collapse state across refreshes.
-	collapsedOrganizations := make(map[string]bool, len(m.Groups))
+	// Capture legacy/in-memory collapse flags, then restore them onto fresh data.
+	if m.OrganizationCollapsed == nil {
+		m.OrganizationCollapsed = make(map[string]bool)
+	}
 	for _, group := range m.Groups {
-		collapsedOrganizations[group.Organization] = group.Collapsed
+		if group.Collapsed {
+			m.OrganizationCollapsed[organizationFocusKey(group.Organization)] = true
+		}
 	}
 	for i := range msg.Groups {
-		msg.Groups[i].Collapsed = collapsedOrganizations[msg.Groups[i].Organization]
+		msg.Groups[i].Collapsed = m.OrganizationCollapsed[organizationFocusKey(msg.Groups[i].Organization)]
 	}
 
 	// Update groups
@@ -243,7 +261,7 @@ func (m Model) handlePRsLoaded(msg PRsLoadedMsg) (tea.Model, tea.Cmd) {
 	if m.WatchMode {
 		cmds = append(cmds, m.watchTickCmd())
 	}
-
+	m = m.persistViewState()
 	return m, tea.Batch(cmds...)
 }
 
@@ -299,7 +317,7 @@ func (m Model) moveUp() (tea.Model, tea.Cmd) {
 	if currentIdx > 0 {
 		m.SelectedKey = keys[currentIdx-1]
 	}
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 // moveDown moves selection to next visible PR.
@@ -318,7 +336,7 @@ func (m Model) moveDown() (tea.Model, tea.Cmd) {
 	if currentIdx < len(keys)-1 {
 		m.SelectedKey = keys[currentIdx+1]
 	}
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 // goToTop moves selection to first visible PR.
@@ -327,7 +345,7 @@ func (m Model) goToTop() (tea.Model, tea.Cmd) {
 	if len(keys) > 0 {
 		m.SelectedKey = keys[0]
 	}
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 // goToBottom moves selection to last visible PR.
@@ -336,7 +354,7 @@ func (m Model) goToBottom() (tea.Model, tea.Cmd) {
 	if len(keys) > 0 {
 		m.SelectedKey = keys[len(keys)-1]
 	}
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 // toggleCurrentOrg toggles collapse state of the org containing selected PR.
@@ -346,11 +364,11 @@ func (m Model) toggleCurrentOrg() (tea.Model, tea.Cmd) {
 	}
 	if m.GroupingMode == model.GroupingModeRepository {
 		m = m.toggleFocusedTreeNode()
-		return m, nil
+		return m.persistViewState(), nil
 	}
 	if _, ok := parseOrganizationFocusKey(m.SelectedKey); ok {
 		m = m.toggleOrganizationViewNode(m.SelectedKey)
-		return m, nil
+		return m.persistViewState(), nil
 	}
 
 	pr := m.SelectedPR()
@@ -361,13 +379,17 @@ func (m Model) toggleCurrentOrg() (tea.Model, tea.Cmd) {
 	for i := range m.Groups {
 		if m.Groups[i].Organization == pr.Organization {
 			m.Groups[i].Collapsed = !m.Groups[i].Collapsed
+			if m.OrganizationCollapsed == nil {
+				m.OrganizationCollapsed = make(map[string]bool)
+			}
+			m.OrganizationCollapsed[organizationFocusKey(pr.Organization)] = m.Groups[i].Collapsed
 			break
 		}
 	}
 
 	// Adjust selection if now in collapsed group
 	m.SelectedKey = m.findNearestVisibleKey()
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 // toggleAllOrgs toggles collapse state of all organizations.
@@ -398,7 +420,7 @@ func (m Model) toggleAllOrgs() (tea.Model, tea.Cmd) {
 			}
 		}
 		m.SelectedKey = m.findNearestVisibleKey()
-		return m, nil
+		return m.persistViewState(), nil
 	}
 	// Determine if we should expand or collapse all
 	// If any is collapsed, expand all; otherwise collapse all
@@ -410,19 +432,23 @@ func (m Model) toggleAllOrgs() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.OrganizationCollapsed == nil {
+		m.OrganizationCollapsed = make(map[string]bool)
+	}
 	for i := range m.Groups {
 		m.Groups[i].Collapsed = !anyCollapsed
+		m.OrganizationCollapsed[organizationFocusKey(m.Groups[i].Organization)] = !anyCollapsed
 	}
 
 	m.SelectedKey = m.findNearestVisibleKey()
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 // toggleDrafts toggles draft visibility.
 func (m Model) toggleDrafts() (tea.Model, tea.Cmd) {
 	m.ShowDrafts = !m.ShowDrafts
 	m.SelectedKey = m.findNearestVisibleKey()
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 // cycleDisplayMode cycles through display modes: full -> compact -> minimal -> full.
@@ -435,7 +461,7 @@ func (m Model) cycleDisplayMode() (tea.Model, tea.Cmd) {
 	case model.DisplayModeMinimal:
 		m.DisplayMode = model.DisplayModeFull
 	}
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 // toggleWatch toggles watch mode.
@@ -701,6 +727,10 @@ func (m Model) handleAccountSwitched(msg AccountSwitchedMsg) (tea.Model, tea.Cmd
 
 	m.Client = newClient
 	m.Config.General.Username = msg.Login
+	m.Groups = nil
+	m.TotalCount = 0
+	m.ChangedKeys = make(map[string]time.Time)
+	m.restoreAccountView(msg.Login)
 	m.ViewMode = ViewDashboard
 	m.HiddenManager = HiddenManagerState{}
 	m.LastHidden = nil

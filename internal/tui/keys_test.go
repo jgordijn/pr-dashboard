@@ -37,6 +37,8 @@ func TestKeyMapBindings(t *testing.T) {
 		{"HideItem", km.HideItem, []string{"H"}},
 		{"UndoHide", km.UndoHide, []string{"z"}},
 		{"ManageHidden", km.ManageHidden, []string{"M"}},
+		{"CycleSort", km.CycleSort, []string{"t"}},
+		{"ToggleSort", km.ToggleSort, []string{"T"}},
 		{"ToggleWatch", km.ToggleWatch, []string{"w"}},
 		{"UpdateBranch", km.UpdateBranch, []string{"u"}},
 		{"Refresh", km.Refresh, []string{"r"}},

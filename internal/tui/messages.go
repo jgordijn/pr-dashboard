@@ -9,13 +9,15 @@ import (
 
 // PRsLoadedMsg is sent when PR data has been fetched successfully.
 type PRsLoadedMsg struct {
+	Account   string
 	Groups    []model.PRGroup
 	RateLimit RateLimitInfo
 }
 
 // PRsErrorMsg is sent when an error occurs fetching PRs.
 type PRsErrorMsg struct {
-	Err error
+	Account string
+	Err     error
 }
 
 // ActionStartMsg is sent when an action (like update branch) starts.
@@ -71,7 +73,6 @@ type ModalState struct {
 	Title   string
 	Message string
 }
-
 
 // AccountsLoadedMsg is sent when the list of gh CLI accounts has been fetched.
 type AccountsLoadedMsg struct {

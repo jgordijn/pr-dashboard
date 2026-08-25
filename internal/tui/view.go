@@ -108,10 +108,7 @@ func (m Model) renderPRList() string {
 		}
 
 		// Render PRs in group
-		for _, pr := range group.PRs {
-			if !m.isPRDisplayable(pr) {
-				continue
-			}
+		for _, pr := range m.sortedDisplayablePRs(group.PRs) {
 			b.WriteString(m.renderPRRow(pr))
 			b.WriteString("\n")
 		}
@@ -898,14 +895,22 @@ func (m Model) renderStatusBar() string {
 		}
 		return strings.Join(kept, " ")
 	}
-	left := joinLeft(username, watch, grouping, mode, clock, rate)
-	if m.FlashMessage != "" {
-		candidate := left + " │ " + m.FlashMessage + " │ " + help
+	left := joinLeft(username, watch, grouping, m.sortToken(), mode, clock, rate)
+	statusMessage := m.FlashMessage
+	if m.ViewStateWarning != "" {
+		if statusMessage != "" {
+			statusMessage += " · " + m.ViewStateWarning
+		} else {
+			statusMessage = m.ViewStateWarning
+		}
+	}
+	if statusMessage != "" {
+		candidate := left + " │ " + statusMessage + " │ " + help
 		if lipgloss.Width(candidate) <= limit {
 			return m.Styles.StatusBarStyle.Render(candidate)
 		}
 		flashWidth := max(1, limit-lipgloss.Width(left+" │  │ "+help))
-		candidate = left + " │ " + truncateCells(m.FlashMessage, flashWidth) + " │ " + help
+		candidate = left + " │ " + truncateCells(statusMessage, flashWidth) + " │ " + help
 		if lipgloss.Width(candidate) <= limit {
 			return m.Styles.StatusBarStyle.Render(candidate)
 		}
@@ -923,7 +928,7 @@ func (m Model) renderStatusBar() string {
 	if baseline := left + " · " + help; lipgloss.Width(baseline) <= limit {
 		return m.Styles.StatusBarStyle.Render(baseline)
 	}
-	for _, candidateLeft := range []string{joinLeft(username, watch, grouping, mode, rate), joinLeft(username, grouping, mode, rate), joinLeft(username, grouping, rate), joinLeft(username, rate), username} {
+	for _, candidateLeft := range []string{joinLeft(username, watch, grouping, m.sortToken(), mode, rate), joinLeft(username, grouping, m.sortToken(), mode, rate), joinLeft(username, grouping, m.sortToken(), rate), joinLeft(username, m.sortToken(), rate), username} {
 		candidate := candidateLeft + " · " + help
 		if lipgloss.Width(candidate) <= limit {
 			return m.Styles.StatusBarStyle.Render(candidate)
@@ -1003,7 +1008,7 @@ func (m Model) renderHelpModal() string {
 	lines := []string{
 		m.Styles.ModalTitleStyle.Render("Keys & Symbols"),
 		"j/k/↑/↓ move   gg/G top/bottom   o/O collapse",
-		"h/l tree       v view (organization/repository)",
+		"h/l tree   v view(org/repository)   t sort   T direction",
 		"u update       r refresh          Enter open/toggle",
 		"mouse open/toggle   H hide   M hidden   z undo",
 		"s account      c mode   d drafts  w watch",

@@ -24,6 +24,8 @@ type KeyMap struct {
 	HideItem         key.Binding
 	UndoHide         key.Binding
 	ManageHidden     key.Binding
+	CycleSort        key.Binding
+	ToggleSort       key.Binding
 
 	// Watch mode
 	ToggleWatch key.Binding
@@ -89,6 +91,8 @@ func NewKeyMap() *KeyMap {
 		HideItem:     key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "hide repository/PR")),
 		UndoHide:     key.NewBinding(key.WithKeys("z"), key.WithHelp("z", "undo hide")),
 		ManageHidden: key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "manage hidden")),
+		CycleSort:    key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "cycle sort field")),
+		ToggleSort:   key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "toggle sort direction")),
 		ToggleWatch: key.NewBinding(
 			key.WithKeys("w"),
 			key.WithHelp("w", "toggle watch mode"),
@@ -133,7 +137,7 @@ func (k *KeyMap) FullHelp() [][]key.Binding {
 		// Organization
 		{k.ToggleOrg, k.ToggleAllOrgs},
 		// Display
-		{k.CycleDisplayMode, k.ToggleGrouping, k.HideItem, k.UndoHide, k.ManageHidden, k.ToggleDrafts, k.ToggleWatch},
+		{k.CycleDisplayMode, k.ToggleGrouping, k.CycleSort, k.ToggleSort, k.HideItem, k.UndoHide, k.ManageHidden, k.ToggleDrafts, k.ToggleWatch},
 		// Actions
 		{k.UpdateBranch, k.Refresh, k.OpenBrowser, k.SwitchAccount},
 		// Other

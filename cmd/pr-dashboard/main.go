@@ -16,6 +16,7 @@ import (
 	"github.com/jgordijn/pr-dashboard/internal/github"
 	"github.com/jgordijn/pr-dashboard/internal/hidden"
 	"github.com/jgordijn/pr-dashboard/internal/tui"
+	"github.com/jgordijn/pr-dashboard/internal/viewstate"
 )
 
 // Version is the application version, set at build time.
@@ -162,8 +163,24 @@ func run() int {
 		}
 	}
 
+	// Load the independent account-scoped dashboard setup.
+	views := viewstate.NewState()
+	var viewStore viewstate.Store
+	var viewErr error
+	if path, pathErr := viewstate.DefaultPath(); pathErr != nil {
+		viewErr = pathErr
+	} else {
+		store := viewstate.NewFileStore(path)
+		if loaded, loadErr := store.Load(); loadErr != nil {
+			viewErr = loadErr
+		} else {
+			views = loaded
+			viewStore = store
+		}
+	}
+
 	// Create TUI model
-	model := tui.NewModelWithHidden(cfg, client, hiddenStore, state, hiddenErr)
+	model := tui.NewModelWithState(cfg, client, hiddenStore, state, hiddenErr, viewStore, views, viewErr)
 
 	// Create Bubble Tea program with alt screen (full screen mode)
 	program := tea.NewProgram(
@@ -213,6 +230,7 @@ func printUsage() {
 	fmt.Println("  M                Manage hidden items")
 	fmt.Println("  d                Toggle draft visibility")
 	fmt.Println("  c                Cycle display mode")
+	fmt.Println("  t/T              Cycle sort field / toggle direction")
 	fmt.Println("  w                Toggle watch mode")
 	fmt.Println("  u                Update branch (when behind)")
 	fmt.Println("  r                Refresh")

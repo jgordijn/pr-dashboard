@@ -12,6 +12,8 @@ A terminal UI for monitoring your GitHub pull requests across one or more organi
 - Repository-tree rows place project identity after the PR title
 - Left-click a PR to open it; click organization/repository nodes to toggle them
 - Persistently hide individual repositories or PRs, with undo and a searchable restore manager
+- Sort PRs by name, age, or readiness state in either direction
+- Restore each account's last grouping, display, drafts, sort, focus, and collapse setup
 - Vim-style, arrow-key, and mouse navigation
 - Responsive full, compact, and minimal display modes
 - Draft visibility toggle
@@ -62,11 +64,14 @@ Default config path:
 ~/.config/pr-dashboard/config.toml
 ```
 
-Hidden repository/PR rules are stored separately and atomically in:
+Hidden repository/PR rules and the last account-scoped dashboard setup are stored separately and atomically in:
 
 ```text
 ~/.config/pr-dashboard/hidden.json
+~/.config/pr-dashboard/view-state.json
 ```
+
+The restored setup includes grouping, display density, draft visibility, sort field/direction, focus, and all collapse states.
 
 If the config file does not exist, `pr-dashboard` starts an interactive setup wizard.
 
@@ -178,11 +183,23 @@ pr-dashboard --version
 
 - `c`: cycle display mode (`full -> compact -> minimal`)
 - `v`: toggle organization/repository grouping without refetching
+- `t`: cycle PR sorting through `name → age → state`
+- `T`: toggle ascending/descending sort direction
 - `H`: persistently hide the focused repository or PR
 - `z`: undo the latest successful hide from this session
 - `M`: open the Hidden Items manager; use `/` search, `Tab` type filter, and `u`/Enter to restore
 - `d`: toggle draft visibility
 - `w`: toggle watch mode
+
+### Sorting
+
+Sorting affects PR siblings without reordering organization or repository nodes:
+
+- `name ↑/↓`: title A→Z or Z→A
+- `age ↑/↓`: youngest→oldest or oldest→youngest
+- `state ↑/↓`: healthy→critical or critical→healthy
+
+State severity considers conflicts/dirty state, failing CI, requested changes, blocked/behind status, pending review/checks, unresolved threads, unknown state, and drafts. Equal rows always use deterministic identity tie-breakers.
 
 ### Other
 

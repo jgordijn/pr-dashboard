@@ -67,7 +67,7 @@ func (m *Model) visibleRepositoryGroups() []model.RepositoryGroup {
 			}
 		}
 		if len(filtered) > 0 {
-			group.PRs = filtered
+			group.PRs = m.sortedPRs(filtered)
 			visible = append(visible, group)
 		}
 	}
@@ -122,11 +122,7 @@ func (m *Model) visiblePRsOrganization() []model.PullRequest {
 		if group.Collapsed {
 			continue
 		}
-		for _, pr := range group.PRs {
-			if m.isPRDisplayable(pr) {
-				visible = append(visible, pr)
-			}
-		}
+		visible = append(visible, m.sortedDisplayablePRs(group.PRs)...)
 	}
 	return visible
 }
@@ -163,7 +159,7 @@ func (m Model) toggleGrouping() (tea.Model, tea.Cmd) {
 		m.GroupingMode = model.GroupingModeOrganization
 	}
 	m.SelectedKey = m.findNearestVisibleKey()
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 func (m Model) treeLeft() (tea.Model, tea.Cmd) {
@@ -176,7 +172,7 @@ func (m Model) treeLeft() (tea.Model, tea.Cmd) {
 		if !m.TreeOrganizationCollapsed[key] {
 			m.TreeOrganizationCollapsed[key] = true
 		}
-		return m, nil
+		return m.persistViewState(), nil
 	}
 	if owner, repo, ok := parseRepositoryFocusKey(m.SelectedKey); ok {
 		key := repositoryFocusKey(owner, repo)
@@ -185,12 +181,12 @@ func (m Model) treeLeft() (tea.Model, tea.Cmd) {
 		} else {
 			m.SelectedKey = organizationFocusKey(owner)
 		}
-		return m, nil
+		return m.persistViewState(), nil
 	}
 	if pr := m.SelectedPR(); pr != nil {
 		m.SelectedKey = repositoryFocusKey(pr.Organization, pr.Repository)
 	}
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 func (m Model) treeRight() (tea.Model, tea.Cmd) {
@@ -202,12 +198,12 @@ func (m Model) treeRight() (tea.Model, tea.Cmd) {
 		key := organizationFocusKey(organization)
 		if m.TreeOrganizationCollapsed[key] {
 			m.TreeOrganizationCollapsed[key] = false
-			return m, nil
+			return m.persistViewState(), nil
 		}
 		if first := m.firstVisibleRepositoryInOrganization(organization); first != "" {
 			m.SelectedKey = first
 		}
-		return m, nil
+		return m.persistViewState(), nil
 	}
 	owner, repo, ok := parseRepositoryFocusKey(m.SelectedKey)
 	if !ok {
@@ -216,12 +212,12 @@ func (m Model) treeRight() (tea.Model, tea.Cmd) {
 	key := repositoryFocusKey(owner, repo)
 	if m.RepositoryCollapsed[key] {
 		m.RepositoryCollapsed[key] = false
-		return m, nil
+		return m.persistViewState(), nil
 	}
 	if first := m.firstVisiblePRInRepository(owner, repo); first != "" {
 		m.SelectedKey = first
 	}
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 func (m *Model) ensureTreeCollapseMaps() {
@@ -241,11 +237,15 @@ func (m Model) toggleOrganizationViewNode(key string) Model {
 	for i := range m.Groups {
 		if m.Groups[i].Organization == organization {
 			m.Groups[i].Collapsed = !m.Groups[i].Collapsed
+			if m.OrganizationCollapsed == nil {
+				m.OrganizationCollapsed = make(map[string]bool)
+			}
+			m.OrganizationCollapsed[key] = m.Groups[i].Collapsed
 			m.SelectedKey = key
 			break
 		}
 	}
-	return m
+	return m.persistViewState()
 }
 
 func (m Model) toggleTreeOrganization(key string) Model {
@@ -259,7 +259,7 @@ func (m Model) toggleTreeOrganization(key string) Model {
 	if m.TreeOrganizationCollapsed[key] {
 		m.SelectedKey = key
 	}
-	return m
+	return m.persistViewState()
 }
 func (m Model) toggleRepository(key string) Model {
 	m.ensureTreeCollapseMaps()
@@ -277,7 +277,7 @@ func (m Model) toggleRepository(key string) Model {
 	if m.RepositoryCollapsed[key] {
 		m.SelectedKey = key
 	}
-	return m
+	return m.persistViewState()
 }
 func (m Model) toggleFocusedTreeNode() Model {
 	if _, ok := parseOrganizationFocusKey(m.SelectedKey); ok {

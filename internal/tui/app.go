@@ -11,6 +11,7 @@ import (
 	"github.com/jgordijn/pr-dashboard/internal/github"
 	"github.com/jgordijn/pr-dashboard/internal/hidden"
 	"github.com/jgordijn/pr-dashboard/internal/model"
+	"github.com/jgordijn/pr-dashboard/internal/viewstate"
 )
 
 // Model is the main application model for the TUI.
@@ -38,8 +39,11 @@ type Model struct {
 	GroupingMode              model.GroupingMode
 	ShowDrafts                bool
 	WatchMode                 bool
+	OrganizationCollapsed     map[string]bool
 	RepositoryCollapsed       map[string]bool
 	TreeOrganizationCollapsed map[string]bool
+	SortField                 model.SortField
+	SortDirection             model.SortDirection
 
 	// OpenPR is injectable so mouse activation can be verified without launching a browser.
 	OpenPR func(organization, repository string, number int) error
@@ -52,6 +56,12 @@ type Model struct {
 	ViewMode      ViewMode
 	HiddenManager HiddenManagerState
 	FlashMessage  string
+
+	// Persistent account-scoped dashboard setup.
+	ViewStore        viewstate.Store
+	ViewState        *viewstate.State
+	ViewLoadErr      error
+	ViewStateWarning string
 
 	// Modal state
 	Modal ModalState
@@ -85,11 +95,16 @@ type Model struct {
 
 // NewModel creates a model without persistence, primarily for existing tests.
 func NewModel(cfg *config.Config, client *github.Client) Model {
-	return NewModelWithHidden(cfg, client, nil, hidden.NewState(), nil)
+	return NewModelWithState(cfg, client, nil, hidden.NewState(), nil, nil, viewstate.NewState(), nil)
 }
 
 // NewModelWithHidden creates a model with injected persistent hidden state.
 func NewModelWithHidden(cfg *config.Config, client *github.Client, store hidden.Store, state *hidden.State, loadErr error) Model {
+	return NewModelWithState(cfg, client, store, state, loadErr, nil, viewstate.NewState(), nil)
+}
+
+// NewModelWithState creates a model with both persistence domains injected.
+func NewModelWithState(cfg *config.Config, client *github.Client, hiddenStore hidden.Store, hiddenState *hidden.State, hiddenErr error, viewStore viewstate.Store, savedViews *viewstate.State, viewErr error) Model {
 	displayMode := model.DisplayModeFull
 	switch cfg.Display.InitialMode {
 	case "compact":
@@ -108,14 +123,17 @@ func NewModelWithHidden(cfg *config.Config, client *github.Client, store hidden.
 		symbols = ASCIISymbols
 	}
 
-	if state == nil {
-		state = hidden.NewState()
+	if hiddenState == nil {
+		hiddenState = hidden.NewState()
+	}
+	if savedViews == nil {
+		savedViews = viewstate.NewState()
 	}
 	flash := ""
-	if loadErr != nil {
-		flash = "Hidden items unavailable · " + loadErr.Error()
+	if hiddenErr != nil {
+		flash = "Hidden items unavailable · " + hiddenErr.Error()
 	}
-	return Model{
+	m := Model{
 		Config:                    cfg,
 		Client:                    client,
 		Keys:                      NewKeyMap(),
@@ -124,12 +142,17 @@ func NewModelWithHidden(cfg *config.Config, client *github.Client, store hidden.
 		DisplayMode:               displayMode,
 		GroupingMode:              model.ParseGroupingMode(cfg.Display.Grouping),
 		ShowDrafts:                cfg.Display.ShowDrafts,
+		OrganizationCollapsed:     make(map[string]bool),
 		RepositoryCollapsed:       make(map[string]bool),
 		TreeOrganizationCollapsed: make(map[string]bool),
 		OpenPR:                    github.OpenPRInBrowser,
-		HiddenStore:               store,
-		HiddenState:               state,
-		HiddenLoadErr:             loadErr,
+		HiddenStore:               hiddenStore,
+		HiddenState:               hiddenState,
+		HiddenLoadErr:             hiddenErr,
+		ViewStore:                 viewStore,
+		ViewState:                 savedViews,
+		ViewLoadErr:               viewErr,
+		ViewStateWarning:          viewStateError(viewErr),
 		ViewMode:                  ViewDashboard,
 		FlashMessage:              flash,
 		WatchMode:                 false,
@@ -138,6 +161,8 @@ func NewModelWithHidden(cfg *config.Config, client *github.Client, store hidden.
 		IsLoading:                 true, // Start in loading state
 		Spinner:                   s,
 	}
+	m.restoreAccountView(cfg.General.Username)
+	return m
 }
 
 // Init implements tea.Model. It returns the initial command to fetch PRs.
@@ -151,9 +176,10 @@ func (m Model) Init() tea.Cmd {
 
 // fetchPRsCmd returns a command that fetches PRs from GitHub.
 func (m Model) fetchPRsCmd() tea.Cmd {
+	account := m.Config.General.Username
 	return func() tea.Msg {
 		if m.Client == nil {
-			return PRsErrorMsg{Err: github.ErrEmptyUsername}
+			return PRsErrorMsg{Account: account, Err: github.ErrEmptyUsername}
 		}
 
 		// Collect organization names
@@ -165,7 +191,7 @@ func (m Model) fetchPRsCmd() tea.Cmd {
 		// Fetch PRs with context
 		result, err := m.Client.FetchPRs(context.Background(), m.Config.General.Username, orgNames)
 		if err != nil {
-			return PRsErrorMsg{Err: err}
+			return PRsErrorMsg{Account: account, Err: err}
 		}
 
 		prs := model.TransformPRs(result.PullRequests)
@@ -182,6 +208,7 @@ func (m Model) fetchPRsCmd() tea.Cmd {
 		}
 
 		return PRsLoadedMsg{
+			Account:   account,
 			Groups:    groups,
 			RateLimit: rateLimitInfo,
 		}

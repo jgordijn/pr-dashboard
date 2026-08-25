@@ -78,10 +78,8 @@ func (m Model) mouseItemKeys() []string {
 		if group.Collapsed {
 			continue
 		}
-		for _, pr := range group.PRs {
-			if m.isPRDisplayable(pr) {
-				keys = append(keys, pr.Key)
-			}
+		for _, pr := range m.sortedDisplayablePRs(group.PRs) {
+			keys = append(keys, pr.Key)
 		}
 	}
 	return keys
@@ -134,5 +132,6 @@ func (m Model) activateMouseTarget(clicked mouseTarget) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.SelectedKey = clicked.Key
+	m = m.persistViewState()
 	return m, m.openBrowserCmd(pr)
 }

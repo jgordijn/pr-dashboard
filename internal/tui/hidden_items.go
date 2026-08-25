@@ -142,7 +142,7 @@ func (m Model) hideFocusedItem() (tea.Model, tea.Cmd) {
 	m.LastHidden = &entry
 	m.FlashMessage = "Hidden " + hiddenEntryLabel(entry) + " · z undo · M manage"
 	m.SelectedKey = nearestKeyAt(m.visibleItemKeys(), index)
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 func (m Model) undoLastHide() (tea.Model, tea.Cmd) {
@@ -165,7 +165,7 @@ func (m Model) undoLastHide() (tea.Model, tea.Cmd) {
 	m.SelectedKey = hiddenEntryKey(entry)
 	m.SelectedKey = m.findNearestVisibleKey()
 	m.FlashMessage = "Restored " + hiddenEntryLabel(entry)
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 func (m Model) openHiddenManager() (tea.Model, tea.Cmd) {
@@ -181,7 +181,7 @@ func (m Model) closeHiddenManager() (tea.Model, tea.Cmd) {
 	m.HiddenManager = HiddenManagerState{}
 	m.SelectedKey = previous
 	m.SelectedKey = m.findNearestVisibleKey()
-	return m, nil
+	return m.persistViewState(), nil
 }
 
 func (m Model) unhideManagerSelection() (tea.Model, tea.Cmd) {
