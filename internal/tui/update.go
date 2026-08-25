@@ -61,7 +61,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AccountSwitchedMsg:
 		return m.handleAccountSwitched(msg)
 
-
 	case spinner.TickMsg:
 		// Update spinner animation while loading
 		if m.IsLoading {
@@ -123,6 +122,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.Keys.Bottom):
 		return m.goToBottom()
 
+	case key.Matches(msg, m.Keys.Left):
+		return m.treeLeft()
+
+	case key.Matches(msg, m.Keys.Right):
+		return m.treeRight()
+
 	case key.Matches(msg, m.Keys.ToggleOrg):
 		return m.toggleCurrentOrg()
 
@@ -134,6 +139,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.Keys.CycleDisplayMode):
 		return m.cycleDisplayMode()
+
+	case key.Matches(msg, m.Keys.ToggleGrouping):
+		return m.toggleGrouping()
 
 	case key.Matches(msg, m.Keys.ToggleWatch):
 		return m.toggleWatch()
@@ -150,6 +158,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleUpdateBranch()
 
 	case key.Matches(msg, m.Keys.OpenBrowser):
+		if _, _, ok := parseRepositoryFocusKey(m.SelectedKey); ok && m.GroupingMode == model.GroupingModeRepository {
+			m = m.toggleRepository(m.SelectedKey)
+			return m, nil
+		}
 		return m.openInBrowser()
 
 	case key.Matches(msg, m.Keys.SwitchAccount):
@@ -173,6 +185,15 @@ func (m Model) handlePRsLoaded(msg PRsLoadedMsg) (tea.Model, tea.Cmd) {
 	for _, change := range changes {
 		m.ChangedKeys[change.Key] = time.Now()
 		cmds = append(cmds, clearHighlightCmd(change.Key))
+	}
+
+	// Preserve independent organization collapse state across refreshes.
+	collapsedOrganizations := make(map[string]bool, len(m.Groups))
+	for _, group := range m.Groups {
+		collapsedOrganizations[group.Organization] = group.Collapsed
+	}
+	for i := range msg.Groups {
+		msg.Groups[i].Collapsed = collapsedOrganizations[msg.Groups[i].Organization]
 	}
 
 	// Update groups
@@ -232,60 +253,56 @@ func (m Model) handleActionResult(msg ActionResultMsg) (tea.Model, tea.Cmd) {
 
 // moveUp moves selection to previous visible PR.
 func (m Model) moveUp() (tea.Model, tea.Cmd) {
-	visible := m.visiblePRs()
-	if len(visible) == 0 {
+	keys := m.visibleItemKeys()
+	if len(keys) == 0 {
 		return m, nil
 	}
-
 	currentIdx := -1
-	for i, pr := range visible {
-		if pr.Key == m.SelectedKey {
+	for i, key := range keys {
+		if key == m.SelectedKey {
 			currentIdx = i
 			break
 		}
 	}
-
 	if currentIdx > 0 {
-		m.SelectedKey = visible[currentIdx-1].Key
+		m.SelectedKey = keys[currentIdx-1]
 	}
 	return m, nil
 }
 
 // moveDown moves selection to next visible PR.
 func (m Model) moveDown() (tea.Model, tea.Cmd) {
-	visible := m.visiblePRs()
-	if len(visible) == 0 {
+	keys := m.visibleItemKeys()
+	if len(keys) == 0 {
 		return m, nil
 	}
-
 	currentIdx := -1
-	for i, pr := range visible {
-		if pr.Key == m.SelectedKey {
+	for i, key := range keys {
+		if key == m.SelectedKey {
 			currentIdx = i
 			break
 		}
 	}
-
-	if currentIdx < len(visible)-1 {
-		m.SelectedKey = visible[currentIdx+1].Key
+	if currentIdx < len(keys)-1 {
+		m.SelectedKey = keys[currentIdx+1]
 	}
 	return m, nil
 }
 
 // goToTop moves selection to first visible PR.
 func (m Model) goToTop() (tea.Model, tea.Cmd) {
-	visible := m.visiblePRs()
-	if len(visible) > 0 {
-		m.SelectedKey = visible[0].Key
+	keys := m.visibleItemKeys()
+	if len(keys) > 0 {
+		m.SelectedKey = keys[0]
 	}
 	return m, nil
 }
 
 // goToBottom moves selection to last visible PR.
 func (m Model) goToBottom() (tea.Model, tea.Cmd) {
-	visible := m.visiblePRs()
-	if len(visible) > 0 {
-		m.SelectedKey = visible[len(visible)-1].Key
+	keys := m.visibleItemKeys()
+	if len(keys) > 0 {
+		m.SelectedKey = keys[len(keys)-1]
 	}
 	return m, nil
 }
@@ -293,6 +310,10 @@ func (m Model) goToBottom() (tea.Model, tea.Cmd) {
 // toggleCurrentOrg toggles collapse state of the org containing selected PR.
 func (m Model) toggleCurrentOrg() (tea.Model, tea.Cmd) {
 	if m.SelectedKey == "" {
+		return m, nil
+	}
+	if m.GroupingMode == model.GroupingModeRepository {
+		m = m.toggleRepository(m.SelectedKey)
 		return m, nil
 	}
 
@@ -315,6 +336,24 @@ func (m Model) toggleCurrentOrg() (tea.Model, tea.Cmd) {
 
 // toggleAllOrgs toggles collapse state of all organizations.
 func (m Model) toggleAllOrgs() (tea.Model, tea.Cmd) {
+	if m.GroupingMode == model.GroupingModeRepository {
+		if m.RepositoryCollapsed == nil {
+			m.RepositoryCollapsed = make(map[string]bool)
+		}
+		groups := m.visibleRepositoryGroups()
+		anyCollapsed := false
+		for _, group := range groups {
+			if m.RepositoryCollapsed[repositoryFocusKey(group.Organization, group.Repository)] {
+				anyCollapsed = true
+				break
+			}
+		}
+		for _, group := range groups {
+			m.RepositoryCollapsed[repositoryFocusKey(group.Organization, group.Repository)] = !anyCollapsed
+		}
+		m.SelectedKey = m.findNearestVisibleKey()
+		return m, nil
+	}
 	// Determine if we should expand or collapse all
 	// If any is collapsed, expand all; otherwise collapse all
 	anyCollapsed := false
@@ -502,7 +541,6 @@ func countPRsInGroups(groups []model.PRGroup) int {
 	}
 	return count
 }
-
 
 // listAccountsCmd returns a command that fetches the list of gh CLI accounts.
 func (m Model) listAccountsCmd() tea.Cmd {

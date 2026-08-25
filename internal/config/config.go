@@ -21,6 +21,7 @@ const (
 	DefaultRefreshInterval  = 30
 	DefaultShowDrafts       = true
 	DefaultInitialMode      = "full"
+	DefaultGrouping         = "organization"
 	DefaultHighlightChanges = true
 )
 
@@ -48,6 +49,7 @@ type DisplayConfig struct {
 	ShowDrafts  bool   `toml:"show_drafts"`  // Optional: default true
 	InitialMode string `toml:"initial_mode"` // Optional: "full", "compact", "minimal", default "full"
 	ASCII       bool   `toml:"ascii"`        // Optional: use pure-ASCII status symbols, default false
+	Grouping    string `toml:"grouping"`     // Optional: "organization" or "repository", default "organization"
 }
 
 // NotificationsConfig contains notification-related settings.
@@ -119,5 +121,6 @@ func applyDefaults(cfg *Config) {
 	cfg.General.RefreshInterval = DefaultRefreshInterval
 	cfg.Display.ShowDrafts = DefaultShowDrafts
 	cfg.Display.InitialMode = DefaultInitialMode
+	cfg.Display.Grouping = DefaultGrouping
 	cfg.Notifications.HighlightChanges = DefaultHighlightChanges
 }

@@ -1,9 +1,106 @@
 package model
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestGroupingModeStringAndParse(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		mode  GroupingMode
+		value string
+	}{
+		{name: "organization", mode: GroupingModeOrganization, value: "organization"},
+		{name: "repository", mode: GroupingModeRepository, value: "repository"},
+		{name: "unknown defaults to organization", mode: GroupingMode(99), value: "organization"},
+	} {
+		t.Run("string "+tc.name, func(t *testing.T) {
+			if got := tc.mode.String(); got != tc.value {
+				t.Fatalf("GroupingMode.String() = %q, want %q", got, tc.value)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		value string
+		want  GroupingMode
+	}{
+		{value: "organization", want: GroupingModeOrganization},
+		{value: " OrGaNiZaTiOn ", want: GroupingModeOrganization},
+		{value: "repository", want: GroupingModeRepository},
+		{value: "\tREPOSITORY\n", want: GroupingModeRepository},
+		{value: "unknown", want: GroupingModeOrganization},
+	} {
+		t.Run("parse "+tc.value, func(t *testing.T) {
+			if got := ParseGroupingMode(tc.value); got != tc.want {
+				t.Fatalf("ParseGroupingMode(%q) = %v, want %v", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGroupByRepositoryDeterministicOrdering(t *testing.T) {
+	now := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	prs := []PullRequest{
+		{Key: "alpha/repo#2", Organization: "alpha", Repository: "repo", UpdatedAt: now},
+		{Key: "Alpha/repo#3", Organization: "Alpha", Repository: "repo", UpdatedAt: now},
+		{Key: "Alpha/aardvark#5", Organization: "Alpha", Repository: "aardvark", UpdatedAt: now},
+		{Key: "Alpha/Repo#4", Organization: "Alpha", Repository: "Repo", UpdatedAt: now.Add(-time.Hour)},
+		{Key: "Alpha/repo#1", Organization: "Alpha", Repository: "repo", UpdatedAt: now},
+		{Key: "beta/zeta#1", Organization: "beta", Repository: "zeta", UpdatedAt: now},
+	}
+
+	groups := GroupByRepository(prs)
+	gotGroups := make([]string, len(groups))
+	for i, group := range groups {
+		gotGroups[i] = group.Organization + "/" + group.Repository
+	}
+	wantGroups := []string{"Alpha/aardvark", "Alpha/Repo", "Alpha/repo", "alpha/repo", "beta/zeta"}
+	if !reflect.DeepEqual(gotGroups, wantGroups) {
+		t.Fatalf("group order = %v, want %v", gotGroups, wantGroups)
+	}
+
+	gotKeys := []string{groups[2].PRs[0].Key, groups[2].PRs[1].Key}
+	wantKeys := []string{"Alpha/repo#1", "Alpha/repo#3"}
+	if !reflect.DeepEqual(gotKeys, wantKeys) {
+		t.Fatalf("equal-time PR order = %v, want %v", gotKeys, wantKeys)
+	}
+}
+
+func TestGroupByRepositorySortsChildrenByUpdatedAtDescending(t *testing.T) {
+	now := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	groups := GroupByRepository([]PullRequest{
+		{Key: "org/repo#1", Organization: "org", Repository: "repo", UpdatedAt: now.Add(-time.Hour)},
+		{Key: "org/repo#2", Organization: "org", Repository: "repo", UpdatedAt: now},
+	})
+	if got := []string{groups[0].PRs[0].Key, groups[0].PRs[1].Key}; !reflect.DeepEqual(got, []string{"org/repo#2", "org/repo#1"}) {
+		t.Fatalf("child order = %v", got)
+	}
+}
+
+func TestGroupByRepositoryDoesNotMutateSource(t *testing.T) {
+	now := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	prs := []PullRequest{
+		{Key: "org/repo#2", Organization: "org", Repository: "repo", UpdatedAt: now},
+		{Key: "org/repo#1", Organization: "org", Repository: "repo", UpdatedAt: now},
+	}
+	before := append([]PullRequest(nil), prs...)
+	GroupByRepository(prs)
+	if !reflect.DeepEqual(prs, before) {
+		t.Fatalf("source mutated: got %#v, want %#v", prs, before)
+	}
+}
+
+func TestGroupByRepositoryEmpty(t *testing.T) {
+	if got := GroupByRepository(nil); got != nil {
+		t.Fatalf("GroupByRepository(nil) = %#v, want nil", got)
+	}
+	if got := GroupByRepository([]PullRequest{}); got != nil {
+		t.Fatalf("GroupByRepository(empty) = %#v, want nil", got)
+	}
+}
 
 func TestPRGroup_Count(t *testing.T) {
 	group := PRGroup{

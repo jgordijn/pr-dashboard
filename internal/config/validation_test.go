@@ -19,6 +19,7 @@ func validConfig() *Config {
 		Display: DisplayConfig{
 			ShowDrafts:  true,
 			InitialMode: DefaultInitialMode,
+			Grouping:    DefaultGrouping,
 		},
 		Notifications: NotificationsConfig{
 			HighlightChanges: true,
@@ -227,6 +228,38 @@ func TestValidate_InitialModeWithWhitespaceAndCase(t *testing.T) {
 	}
 }
 
+func TestValidate_Grouping(t *testing.T) {
+	for _, tc := range []struct {
+		name, grouping string
+		valid          bool
+	}{
+		{name: "organization", grouping: "organization", valid: true},
+		{name: "repository", grouping: "repository", valid: true},
+		{name: "normalized organization", grouping: "  OrGaNiZaTiOn ", valid: true},
+		{name: "normalized repository", grouping: "\tREPOSITORY\n", valid: true},
+		{name: "empty uses default", grouping: "", valid: true},
+		{name: "whitespace uses default", grouping: " \t\n", valid: true},
+		{name: "unknown", grouping: "owner", valid: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.Display.Grouping = tc.grouping
+			err := Validate(cfg)
+			if tc.valid && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if !tc.valid {
+				if err == nil {
+					t.Fatal("Validate() error = nil, want grouping error")
+				}
+				if !strings.Contains(err.Error(), "display.grouping") {
+					t.Fatalf("Validate() error = %q, want display.grouping", err)
+				}
+			}
+		})
+	}
+}
+
 func TestValidate_MultipleErrors(t *testing.T) {
 	cfg := &Config{
 		General: GeneralConfig{
@@ -236,6 +269,7 @@ func TestValidate_MultipleErrors(t *testing.T) {
 		Organizations: []OrganizationConfig{},
 		Display: DisplayConfig{
 			InitialMode: "invalid",
+			Grouping:    "owner",
 		},
 	}
 
@@ -249,9 +283,9 @@ func TestValidate_MultipleErrors(t *testing.T) {
 		t.Fatalf("expected *ValidationError, got %T", err)
 	}
 
-	// Should have 4 errors: username, organizations, refresh_interval, initial_mode
-	if len(validationErr.Errors) != 4 {
-		t.Errorf("expected 4 validation errors, got %d: %v", len(validationErr.Errors), validationErr.Errors)
+	// Should have 5 errors: username, organizations, refresh_interval, initial_mode, grouping.
+	if len(validationErr.Errors) != 5 {
+		t.Errorf("expected 5 validation errors, got %d: %v", len(validationErr.Errors), validationErr.Errors)
 	}
 }
 

@@ -6,9 +6,10 @@ A terminal UI for monitoring your GitHub pull requests across one or more organi
 
 ## Features
 
-- Project-first `repository#number` identity on every pull request
+- Project identity on every pull request, with title-first placement in repository view
 - A compact CI/review/merge symbol triad with a selected-row decoder
-- Group pull requests by organization
+- Switch between organization grouping and a collapsible repository tree
+- Repository-tree rows place project identity after the PR title
 - Vim-style and arrow-key navigation
 - Responsive full, compact, and minimal display modes
 - Draft visibility toggle
@@ -81,6 +82,7 @@ login = "your-org"
 [display]
 show_drafts = true
 initial_mode = "full"
+grouping = "organization" # or "repository"
 ascii = false
 
 [notifications]
@@ -94,6 +96,7 @@ highlight_changes = true
 - `organizations[].login`: one or more GitHub organizations to monitor
 - `display.show_drafts`: show draft PRs, default `true`
 - `display.initial_mode`: `full`, `compact`, or `minimal`, default `full`
+- `display.grouping`: initial grouping projection, `organization` or `repository`, default `organization`
 - `display.ascii`: use a pure-ASCII status vocabulary for terminals with ambiguous Unicode widths, default `false`
 - `notifications.highlight_changes`: briefly highlight changed PRs after refresh, default `true`
 
@@ -138,8 +141,10 @@ pr-dashboard --version
 - `k` / `↑`: move up
 - `gg`: go to top
 - `G`: go to bottom
-- `o`: toggle current organization
-- `O`: toggle all organizations
+- `o`: toggle the current organization, or the current repository in repository view
+- `O`: toggle all organizations, or all repositories in repository view
+- `h` / `←`: focus the parent repository or collapse it
+- `l` / `→`: expand a repository or focus its first PR
 
 ### Actions
 
@@ -151,6 +156,7 @@ pr-dashboard --version
 ### Display
 
 - `c`: cycle display mode (`full -> compact -> minimal`)
+- `v`: toggle organization/repository grouping without refetching
 - `d`: toggle draft visibility
 - `w`: toggle watch mode
 

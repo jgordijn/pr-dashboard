@@ -70,8 +70,11 @@ func (m Model) renderEmpty() string {
 	return m.Styles.NormalStyle.Render("No open PRs - nice work! 🎉")
 }
 
-// renderPRList renders the PR list grouped by organization.
+// renderPRList renders the active organization or repository projection.
 func (m Model) renderPRList() string {
+	if m.GroupingMode == model.GroupingModeRepository {
+		return m.renderRepositoryTree()
+	}
 	var b strings.Builder
 
 	for _, group := range m.Groups {
@@ -96,6 +99,222 @@ func (m Model) renderPRList() string {
 	}
 
 	return b.String()
+}
+
+func (m Model) renderRepositoryTree() string {
+	var b strings.Builder
+	for _, group := range m.visibleRepositoryGroups() {
+		key := repositoryFocusKey(group.Organization, group.Repository)
+		b.WriteString(m.renderRepositoryHeader(group))
+		b.WriteByte('\n')
+		if m.RepositoryCollapsed[key] {
+			continue
+		}
+		for i, pr := range group.PRs {
+			b.WriteString(m.renderRepositoryPRRow(pr, i == len(group.PRs)-1))
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+func (m Model) renderRepositoryHeader(group model.RepositoryGroup) string {
+	key := repositoryFocusKey(group.Organization, group.Repository)
+	indicator := m.Symbols.Expanded
+	if m.RepositoryCollapsed[key] {
+		indicator = m.Symbols.Collapsed
+	}
+	gutter := "  "
+	if m.SelectedKey == key {
+		gutter = m.Symbols.Selected + " "
+	}
+	header := gutter + " " + indicator + " " + group.Organization + "/" + group.Repository + fmt.Sprintf(" %d", len(group.PRs))
+	if m.RepositoryCollapsed[key] {
+		risk := m.repositoryRisk(group.PRs)
+		if risk != "" {
+			fill := "─"
+			if m.Config.Display.ASCII {
+				fill = "-"
+			}
+			fillWidth := m.availableWidth() - lipgloss.Width(header) - lipgloss.Width(risk) - 2
+			if fillWidth > 0 {
+				header += " " + strings.Repeat(fill, fillWidth) + " " + risk
+			} else {
+				header += " " + risk
+			}
+		}
+	}
+	if lipgloss.Width(header) > m.availableWidth() {
+		header = m.truncateForMode(header, m.availableWidth())
+	}
+	if m.SelectedKey == key {
+		return m.Styles.SelectedStyle.Render(header)
+	}
+	return m.Styles.HeaderStyle.Render(header)
+}
+
+func (m Model) repositoryRisk(prs []model.PullRequest) string {
+	failing, behind, threads := 0, 0, 0
+	for _, pr := range prs {
+		if pr.CheckStatus == model.CheckStatusFailing {
+			failing++
+		}
+		if pr.MergeStatus == model.MergeStatusBehind {
+			behind++
+		}
+		threads += pr.UnresolvedCount
+		if pr.UnresolvedCount == 0 {
+			n, _ := strconv.Atoi(strings.TrimSuffix(pr.UnresolvedThreads, "+"))
+			threads += n
+		}
+	}
+	var risk []string
+	if failing > 0 {
+		risk = append(risk, fmt.Sprintf("%s%d", m.Symbols.CIFailing, failing))
+	}
+	if behind > 0 {
+		risk = append(risk, fmt.Sprintf("%s%d", m.Symbols.MergeBehind, behind))
+	}
+	if threads > 0 {
+		risk = append(risk, fmt.Sprintf("%s%d", m.Symbols.Thread, threads))
+	}
+	return strings.Join(risk, " ")
+}
+
+type repositoryRowLayout struct {
+	number, title, repository, author, age int
+	showAuthor, showAge, showThreads       bool
+}
+
+func (m Model) repositoryLayoutFor(pr model.PullRequest) repositoryRowLayout {
+	width := m.availableWidth()
+	prs := m.visiblePRs()
+	if len(prs) == 0 {
+		prs = []model.PullRequest{pr}
+	}
+	layout := repositoryRowLayout{showAuthor: m.DisplayMode == model.DisplayModeFull && width >= 80, showAge: m.DisplayMode != model.DisplayModeMinimal && width >= 60, showThreads: m.DisplayMode != model.DisplayModeMinimal && width >= 60}
+	repoCap := 20
+	if width < 40 {
+		repoCap = 8
+	}
+	for _, item := range prs {
+		n := lipgloss.Width(fmt.Sprintf("#%d", item.Number))
+		if n > layout.number {
+			layout.number = n
+		}
+		r := lipgloss.Width(m.truncateForMode(item.Repository, repoCap))
+		if r > layout.repository {
+			layout.repository = r
+		}
+		if layout.showAuthor {
+			a := lipgloss.Width(m.truncateForMode(item.Author, 12))
+			if a > layout.author {
+				layout.author = a
+			}
+		}
+		if layout.showAge {
+			a := lipgloss.Width(ageString(item))
+			if a > layout.age {
+				layout.age = a
+			}
+		}
+	}
+	if layout.age == 0 {
+		layout.age = 2
+	}
+	fixed := 2 + 2 + layout.number + layout.repository + 5
+	separators := 5
+	if layout.showAuthor {
+		fixed += layout.author
+		separators++
+	}
+	if layout.showAge {
+		fixed += layout.age
+		separators++
+	}
+	if layout.showThreads {
+		fixed += 4
+		separators++
+	}
+	layout.title = max(1, width-fixed-separators)
+	return layout
+}
+
+func (m Model) renderRepositoryPRRow(pr model.PullRequest, last bool) string {
+	if m.availableWidth() < 24 {
+		return m.truncateForMode("Terminal too narrow (minimum 24 columns)", m.availableWidth())
+	}
+	selected := pr.Key == m.SelectedKey
+	_, changed := m.ChangedKeys[pr.Key]
+	gutter := "  "
+	if selected {
+		gutter = m.Symbols.Selected + " "
+	}
+	if changed {
+		gutter = " " + m.Symbols.Changed
+	}
+	if selected && changed {
+		gutter = m.Symbols.Selected + m.Symbols.Changed
+	}
+	connector := "├─"
+	if last {
+		connector = "└─"
+	}
+	if m.Config.Display.ASCII {
+		connector = "|-"
+		if last {
+			connector = "`-"
+		}
+	}
+	layout := m.repositoryLayoutFor(pr)
+	parts := []string{gutter, connector, padRight(fmt.Sprintf("#%d", pr.Number), layout.number), padRight(m.truncateForMode(pr.Title, layout.title), layout.title), padRight(m.truncateForMode(pr.Repository, layout.repository), layout.repository)}
+	if layout.showAuthor {
+		parts = append(parts, padRight(m.truncateForMode(pr.Author, layout.author), layout.author))
+	}
+	if layout.showAge {
+		parts = append(parts, padLeft(ageString(pr), layout.age))
+	}
+	parts = append(parts, m.renderStatusTriad(pr))
+	if layout.showThreads && pr.UnresolvedThreads != "" && pr.UnresolvedThreads != "0" {
+		parts = append(parts, padLeft(m.threadLabel(pr.UnresolvedThreads), 4))
+	}
+	row := strings.Join(parts, " ")
+	if lipgloss.Width(row) > m.availableWidth() {
+		return m.truncateForMode("Terminal too narrow for repository row", m.availableWidth())
+	}
+	if selected {
+		row = m.Styles.SelectedStyle.Render(row)
+	} else if changed {
+		row = m.Styles.ChangedStyle.Render(row)
+	} else if pr.IsDraft {
+		row = m.Styles.DraftStyle.Render(row)
+	}
+	return row
+}
+
+func (m Model) truncateForMode(value string, width int) string {
+	if !m.Config.Display.ASCII {
+		return truncateCells(value, width)
+	}
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	if width <= 3 {
+		return strings.Repeat(".", width)
+	}
+	g := uniseg.NewGraphemes(value)
+	result := ""
+	for g.Next() {
+		next := result + g.Str()
+		if lipgloss.Width(next) > width-3 {
+			break
+		}
+		result = next
+	}
+	return result + "..."
 }
 
 // renderOrgHeader renders an organization header and, when collapsed, a risk rollup.
@@ -584,6 +803,10 @@ func (m Model) renderStatusBar() string {
 		watch = fmt.Sprintf("↻%ds", m.Config.General.RefreshInterval)
 	}
 	mode := m.effectiveModeLabel()
+	grouping := "org"
+	if m.GroupingMode == model.GroupingModeRepository {
+		grouping = "repo"
+	}
 	clock := ""
 	if !m.LastRefresh.IsZero() {
 		clock = m.LastRefresh.Format("15:04")
@@ -601,7 +824,7 @@ func (m Model) renderStatusBar() string {
 		}
 		return strings.Join(kept, " ")
 	}
-	left := joinLeft(username, watch, mode, clock, rate)
+	left := joinLeft(username, watch, grouping, mode, clock, rate)
 	for level := 0; level <= 3; level++ {
 		decoder := m.renderSelectedDecoderLevel(level)
 		if decoder == "" {
@@ -615,7 +838,7 @@ func (m Model) renderStatusBar() string {
 	if baseline := left + " · " + help; lipgloss.Width(baseline) <= limit {
 		return m.Styles.StatusBarStyle.Render(baseline)
 	}
-	for _, candidateLeft := range []string{joinLeft(username, watch, mode, rate), joinLeft(username, watch, rate), joinLeft(username, rate), username} {
+	for _, candidateLeft := range []string{joinLeft(username, watch, grouping, mode, rate), joinLeft(username, grouping, mode, rate), joinLeft(username, grouping, rate), joinLeft(username, rate), username} {
 		candidate := candidateLeft + " · " + help
 		if lipgloss.Width(candidate) <= limit {
 			return m.Styles.StatusBarStyle.Render(candidate)
@@ -689,7 +912,8 @@ func (m Model) renderHelpModal() string {
 	lines := []string{
 		m.Styles.ModalTitleStyle.Render("Keys & Symbols"),
 		"j/k/↑/↓ move   gg/G top/bottom   o/O collapse",
-		"u update       r refresh          Enter open",
+		"h/l tree       v view (organization/repository)",
+		"u update       r refresh          Enter open/toggle",
 		"s account      c mode   d drafts  w watch",
 		"? help         q/Esc quit",
 		"",

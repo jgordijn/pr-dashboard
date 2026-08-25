@@ -54,6 +54,22 @@ func TestNewModel(t *testing.T) {
 	}
 }
 
+func TestNewModelSelectsGrouping(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  model.GroupingMode
+	}{{"", model.GroupingModeOrganization}, {"organization", model.GroupingModeOrganization}, {" Repository ", model.GroupingModeRepository}} {
+		cfg := &config.Config{Display: config.DisplayConfig{InitialMode: "full", Grouping: tc.value}}
+		m := NewModel(cfg, nil)
+		if m.GroupingMode != tc.want {
+			t.Errorf("GroupingMode=%v want %v", m.GroupingMode, tc.want)
+		}
+		if m.RepositoryCollapsed == nil {
+			t.Fatal("RepositoryCollapsed not initialized")
+		}
+	}
+}
+
 func TestNewModelSelectsASCIICharacters(t *testing.T) {
 	cfg := &config.Config{Display: config.DisplayConfig{InitialMode: "full", ASCII: true}}
 	m := NewModel(cfg, nil)

@@ -33,9 +33,11 @@ type Model struct {
 	SelectedKey string
 
 	// Display settings
-	DisplayMode model.DisplayMode
-	ShowDrafts  bool
-	WatchMode   bool
+	DisplayMode         model.DisplayMode
+	GroupingMode        model.GroupingMode
+	ShowDrafts          bool
+	WatchMode           bool
+	RepositoryCollapsed map[string]bool
 
 	// Modal state
 	Modal ModalState
@@ -88,18 +90,20 @@ func NewModel(cfg *config.Config, client *github.Client) Model {
 	}
 
 	return Model{
-		Config:      cfg,
-		Client:      client,
-		Keys:        NewKeyMap(),
-		Styles:      NewStyles(),
-		Symbols:     symbols,
-		DisplayMode: displayMode,
-		ShowDrafts:  cfg.Display.ShowDrafts,
-		WatchMode:   false,
-		Modal:       ModalState{Type: ModalNone},
-		ChangedKeys: make(map[string]time.Time),
-		IsLoading:   true, // Start in loading state
-		Spinner:     s,
+		Config:              cfg,
+		Client:              client,
+		Keys:                NewKeyMap(),
+		Styles:              NewStyles(),
+		Symbols:             symbols,
+		DisplayMode:         displayMode,
+		GroupingMode:        model.ParseGroupingMode(cfg.Display.Grouping),
+		ShowDrafts:          cfg.Display.ShowDrafts,
+		RepositoryCollapsed: make(map[string]bool),
+		WatchMode:           false,
+		Modal:               ModalState{Type: ModalNone},
+		ChangedKeys:         make(map[string]time.Time),
+		IsLoading:           true, // Start in loading state
+		Spinner:             s,
 	}
 }
 
@@ -181,40 +185,61 @@ func (m *Model) SelectedPR() *model.PullRequest {
 	return nil
 }
 
-// visiblePRs returns all visible PRs considering collapsed orgs and draft filter.
+// visiblePRs returns visible PR leaves for the active grouping projection.
 func (m *Model) visiblePRs() []model.PullRequest {
+	if m.GroupingMode == model.GroupingModeOrganization {
+		return m.visiblePRsOrganization()
+	}
 	var visible []model.PullRequest
-	for _, group := range m.Groups {
-		if group.Collapsed {
+	for _, group := range m.visibleRepositoryGroups() {
+		if m.RepositoryCollapsed[repositoryFocusKey(group.Organization, group.Repository)] {
 			continue
 		}
-		for _, pr := range group.PRs {
-			if !m.ShowDrafts && pr.IsDraft {
-				continue
-			}
-			visible = append(visible, pr)
-		}
+		visible = append(visible, group.PRs...)
 	}
 	return visible
 }
 
 // findNearestVisibleKey finds the nearest visible PR key after selection changes.
 func (m *Model) findNearestVisibleKey() string {
-	visible := m.visiblePRs()
-	if len(visible) == 0 {
-		return ""
-	}
-	// If current selection is still visible, keep it
-	for _, pr := range visible {
-		if pr.Key == m.SelectedKey {
-			return m.SelectedKey
+	keys := m.visibleItemKeys()
+	for _, key := range keys {
+		if key == m.SelectedKey {
+			return key
 		}
 	}
-	// Otherwise, select first visible
-	return visible[0].Key
+	if owner, repo, ok := parseRepositoryFocusKey(m.SelectedKey); ok && m.GroupingMode == model.GroupingModeOrganization {
+		for _, pr := range m.visiblePRsOrganization() {
+			if pr.Organization == owner && pr.Repository == repo {
+				return pr.Key
+			}
+		}
+	}
+	if m.GroupingMode == model.GroupingModeRepository {
+		if pr := m.SelectedPR(); pr != nil {
+			parent := repositoryFocusKey(pr.Organization, pr.Repository)
+			for _, key := range keys {
+				if key == parent {
+					return parent
+				}
+			}
+		}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	return keys[0]
 }
 
 // countVisiblePRs returns the total count of visible PRs.
 func (m *Model) countVisiblePRs() int {
-	return len(m.visiblePRs())
+	count := 0
+	for _, group := range m.Groups {
+		for _, pr := range group.PRs {
+			if m.ShowDrafts || !pr.IsDraft {
+				count++
+			}
+		}
+	}
+	return count
 }

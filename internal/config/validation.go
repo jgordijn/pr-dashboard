@@ -19,6 +19,12 @@ var validInitialModes = map[string]bool{
 	"minimal": true,
 }
 
+// Valid values for display grouping.
+var validGroupings = map[string]bool{
+	"organization": true,
+	"repository":   true,
+}
+
 // ValidationError represents a configuration validation error with multiple issues.
 type ValidationError struct {
 	Errors []string
@@ -70,6 +76,14 @@ func Validate(cfg *Config) error {
 	initialMode := strings.ToLower(strings.TrimSpace(cfg.Display.InitialMode))
 	if !validInitialModes[initialMode] {
 		errs = append(errs, fmt.Sprintf("display.initial_mode must be one of 'full', 'compact', or 'minimal', got '%s'", cfg.Display.InitialMode))
+	}
+
+	grouping := strings.ToLower(strings.TrimSpace(cfg.Display.Grouping))
+	if grouping == "" {
+		grouping = DefaultGrouping
+	}
+	if !validGroupings[grouping] {
+		errs = append(errs, fmt.Sprintf("display.grouping must be one of 'organization' or 'repository', got '%s'", cfg.Display.Grouping))
 	}
 
 	if len(errs) > 0 {

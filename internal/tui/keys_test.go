@@ -27,10 +27,13 @@ func TestKeyMapBindings(t *testing.T) {
 		{"Down", km.Down, []string{"j", "down"}},
 		{"Top", km.Top, []string{"g"}},
 		{"Bottom", km.Bottom, []string{"G"}},
+		{"Left", km.Left, []string{"h", "left"}},
+		{"Right", km.Right, []string{"l", "right"}},
 		{"ToggleOrg", km.ToggleOrg, []string{"o"}},
 		{"ToggleAllOrgs", km.ToggleAllOrgs, []string{"O"}},
 		{"ToggleDrafts", km.ToggleDrafts, []string{"d"}},
 		{"CycleDisplayMode", km.CycleDisplayMode, []string{"c"}},
+		{"ToggleGrouping", km.ToggleGrouping, []string{"v"}},
 		{"ToggleWatch", km.ToggleWatch, []string{"w"}},
 		{"UpdateBranch", km.UpdateBranch, []string{"u"}},
 		{"Refresh", km.Refresh, []string{"r"}},
@@ -49,6 +52,10 @@ func TestKeyMapBindings(t *testing.T) {
 					keyMsg = tea.KeyMsg{Type: tea.KeyUp}
 				case "down":
 					keyMsg = tea.KeyMsg{Type: tea.KeyDown}
+				case "left":
+					keyMsg = tea.KeyMsg{Type: tea.KeyLeft}
+				case "right":
+					keyMsg = tea.KeyMsg{Type: tea.KeyRight}
 				case "enter":
 					keyMsg = tea.KeyMsg{Type: tea.KeyEnter}
 				case "esc":

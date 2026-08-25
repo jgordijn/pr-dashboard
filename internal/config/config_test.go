@@ -394,8 +394,35 @@ func TestApplyDefaults_SetsAllDefaults(t *testing.T) {
 	if cfg.Display.InitialMode != DefaultInitialMode {
 		t.Errorf("InitialMode = %q, want %q", cfg.Display.InitialMode, DefaultInitialMode)
 	}
+	if cfg.Display.Grouping != DefaultGrouping {
+		t.Errorf("Grouping = %q, want %q", cfg.Display.Grouping, DefaultGrouping)
+	}
 	if cfg.Notifications.HighlightChanges != DefaultHighlightChanges {
 		t.Errorf("HighlightChanges = %v, want %v", cfg.Notifications.HighlightChanges, DefaultHighlightChanges)
+	}
+}
+
+func TestLoadFromPath_DisplayGroupingDefaultAndOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name, groupingLine, want string
+	}{
+		{name: "default", want: "organization"},
+		{name: "repository", groupingLine: "grouping = 'repository'\n", want: "repository"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			content := "[general]\nusername='me'\n[[organizations]]\nlogin='org'\n[display]\n" + tc.groupingLine
+			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadFromPath(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Display.Grouping != tc.want {
+				t.Fatalf("Grouping = %q, want %q", cfg.Display.Grouping, tc.want)
+			}
+		})
 	}
 }
 
@@ -409,6 +436,9 @@ func TestDefaultConstants(t *testing.T) {
 	}
 	if DefaultInitialMode != "full" {
 		t.Errorf("DefaultInitialMode = %q, want %q (per spec)", DefaultInitialMode, "full")
+	}
+	if DefaultGrouping != "organization" {
+		t.Errorf("DefaultGrouping = %q, want %q (per spec)", DefaultGrouping, "organization")
 	}
 	if DefaultHighlightChanges != true {
 		t.Errorf("DefaultHighlightChanges = %v, want %v (per spec)", DefaultHighlightChanges, true)

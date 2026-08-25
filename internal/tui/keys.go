@@ -10,14 +10,17 @@ type KeyMap struct {
 	Down   key.Binding
 	Top    key.Binding
 	Bottom key.Binding
+	Left   key.Binding
+	Right  key.Binding
 
 	// Organization controls
 	ToggleOrg     key.Binding
 	ToggleAllOrgs key.Binding
 
 	// Display controls
-	ToggleDrafts    key.Binding
+	ToggleDrafts     key.Binding
 	CycleDisplayMode key.Binding
+	ToggleGrouping   key.Binding
 
 	// Watch mode
 	ToggleWatch key.Binding
@@ -52,6 +55,14 @@ func NewKeyMap() *KeyMap {
 			key.WithKeys("G"),
 			key.WithHelp("G", "go to bottom"),
 		),
+		Left: key.NewBinding(
+			key.WithKeys("h", "left"),
+			key.WithHelp("h/left", "parent/collapse"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("l", "right"),
+			key.WithHelp("l/right", "expand/child"),
+		),
 		ToggleOrg: key.NewBinding(
 			key.WithKeys("o"),
 			key.WithHelp("o", "toggle org collapse"),
@@ -67,6 +78,10 @@ func NewKeyMap() *KeyMap {
 		CycleDisplayMode: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "cycle display mode"),
+		),
+		ToggleGrouping: key.NewBinding(
+			key.WithKeys("v"),
+			key.WithHelp("v", "toggle grouping view"),
 		),
 		ToggleWatch: key.NewBinding(
 			key.WithKeys("w"),
@@ -108,11 +123,11 @@ func (k *KeyMap) ShortHelp() []key.Binding {
 func (k *KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		// Navigation
-		{k.Up, k.Down, k.Top, k.Bottom},
+		{k.Up, k.Down, k.Top, k.Bottom, k.Left, k.Right},
 		// Organization
 		{k.ToggleOrg, k.ToggleAllOrgs},
 		// Display
-		{k.CycleDisplayMode, k.ToggleDrafts, k.ToggleWatch},
+		{k.CycleDisplayMode, k.ToggleGrouping, k.ToggleDrafts, k.ToggleWatch},
 		// Actions
 		{k.UpdateBranch, k.Refresh, k.OpenBrowser, k.SwitchAccount},
 		// Other
