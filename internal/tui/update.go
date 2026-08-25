@@ -80,7 +80,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg processes keyboard input.
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// If modal is showing, only handle dismiss keys (and account picker selection)
+	if m.ViewMode == ViewDashboard && m.FlashMessage != "" && msg.String() != "H" && msg.String() != "z" && msg.String() != "M" {
+		m.FlashMessage = ""
+	}
+	// If modal is showing, it captures keys over both dashboard and manager views.
 	if m.Modal.Type != ModalNone {
 		// Account picker: handle number key to select an account
 		if m.Modal.Type == ModalAccountPicker {
@@ -95,6 +98,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, nil
+	}
+	if m.ViewMode == ViewHiddenItems {
+		return m.handleHiddenManagerKey(msg)
 	}
 
 	// Handle gg (go to top) - vim style double-g
@@ -146,6 +152,15 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.Keys.ToggleGrouping):
 		return m.toggleGrouping()
+
+	case key.Matches(msg, m.Keys.HideItem):
+		return m.hideFocusedItem()
+
+	case key.Matches(msg, m.Keys.UndoHide):
+		return m.undoLastHide()
+
+	case key.Matches(msg, m.Keys.ManageHidden):
+		return m.openHiddenManager()
 
 	case key.Matches(msg, m.Keys.ToggleWatch):
 		return m.toggleWatch()
@@ -219,6 +234,7 @@ func (m Model) handlePRsLoaded(msg PRsLoadedMsg) (tea.Model, tea.Cmd) {
 	m.LastRefresh = time.Now()
 	m.IsLoading = false
 	m.Error = nil
+	m.FlashMessage = ""
 
 	// Preserve selection by stable key
 	m.SelectedKey = m.findNearestVisibleKey()
@@ -685,6 +701,10 @@ func (m Model) handleAccountSwitched(msg AccountSwitchedMsg) (tea.Model, tea.Cmd
 
 	m.Client = newClient
 	m.Config.General.Username = msg.Login
+	m.ViewMode = ViewDashboard
+	m.HiddenManager = HiddenManagerState{}
+	m.LastHidden = nil
+	m.FlashMessage = ""
 	m.IsLoading = true
 
 	return m, tea.Batch(m.fetchPRsCmd(), m.Spinner.Tick)

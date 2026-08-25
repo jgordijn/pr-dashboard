@@ -14,9 +14,12 @@ import (
 
 // View implements tea.Model. It renders the current state as a string.
 func (m Model) View() string {
-	// Handle modal overlay
+	// Modals remain visible over both dashboard and hidden-manager views.
 	if m.Modal.Type != ModalNone {
 		return m.renderWithModal()
+	}
+	if m.ViewMode == ViewHiddenItems {
+		return m.renderHiddenManager()
 	}
 
 	var b strings.Builder
@@ -30,8 +33,10 @@ func (m Model) View() string {
 		b.WriteString(m.renderLoading())
 	} else if m.Error != nil && len(m.Groups) == 0 {
 		b.WriteString(m.renderError())
-	} else if len(m.Groups) == 0 || m.countVisiblePRs() == 0 {
+	} else if len(m.Groups) == 0 {
 		b.WriteString(m.renderEmpty())
+	} else if m.countVisiblePRs() == 0 {
+		b.WriteString(m.renderFilteredEmpty())
 	} else {
 		b.WriteString(m.renderPRList())
 	}
@@ -46,7 +51,9 @@ func (m Model) View() string {
 // renderHeader renders the application header.
 func (m Model) renderHeader() string {
 	title := "PR Dashboard"
-	if m.TotalCount > 0 {
+	if hidden := m.hiddenRuleCount(); hidden > 0 {
+		title += fmt.Sprintf(" · %d/%d visible · H%d", m.countVisiblePRs(), m.TotalCount, hidden)
+	} else if m.TotalCount > 0 {
 		title += fmt.Sprintf(" · %d", m.TotalCount)
 	}
 	if m.IsLoading {
@@ -69,6 +76,16 @@ func (m Model) renderError() string {
 func (m Model) renderEmpty() string {
 	return m.Styles.NormalStyle.Render("No open PRs - nice work! 🎉")
 }
+func (m Model) renderFilteredEmpty() string {
+	hiddenCount, draftCount := m.projectionExclusions()
+	if hiddenCount > 0 && draftCount == 0 {
+		return m.Styles.NormalStyle.Render(fmt.Sprintf("Everything here is hidden\n%d pull requests excluded · Press M to manage hidden items", hiddenCount))
+	}
+	if hiddenCount > 0 && draftCount > 0 {
+		return m.Styles.NormalStyle.Render(fmt.Sprintf("No visible pull requests · %d hidden · %d drafts filtered\nM manage hidden · d show drafts", hiddenCount, draftCount))
+	}
+	return m.Styles.NormalStyle.Render("No visible pull requests · drafts are hidden\nPress d to show drafts")
+}
 
 // renderPRList renders the active organization or repository projection.
 func (m Model) renderPRList() string {
@@ -78,6 +95,9 @@ func (m Model) renderPRList() string {
 	var b strings.Builder
 
 	for _, group := range m.Groups {
+		if m.visiblePRCountInGroup(group) == 0 {
+			continue
+		}
 		// Render organization header
 		b.WriteString(m.renderOrgHeader(group))
 		b.WriteString("\n")
@@ -89,8 +109,7 @@ func (m Model) renderPRList() string {
 
 		// Render PRs in group
 		for _, pr := range group.PRs {
-			// Skip drafts if hidden
-			if !m.ShowDrafts && pr.IsDraft {
+			if !m.isPRDisplayable(pr) {
 				continue
 			}
 			b.WriteString(m.renderPRRow(pr))
@@ -369,7 +388,7 @@ func (m Model) renderOrgHeader(group model.PRGroup) string {
 	}
 	visible, failing, behind, threads := 0, 0, 0, 0
 	for _, pr := range group.PRs {
-		if !m.ShowDrafts && pr.IsDraft {
+		if !m.isPRDisplayable(pr) {
 			continue
 		}
 		visible++
@@ -848,6 +867,9 @@ func (m Model) effectiveModeLabel() string {
 // renderStatusBar renders compact chrome and reserves the discoverability hint.
 func (m Model) renderStatusBar() string {
 	help := "?help"
+	if count := m.hiddenRuleCount(); count > 0 {
+		help = fmt.Sprintf("M hidden(%d) · ?help", count)
+	}
 	limit := m.availableWidth() - 2
 	username := "@" + m.Config.General.Username
 	watch := ""
@@ -877,6 +899,17 @@ func (m Model) renderStatusBar() string {
 		return strings.Join(kept, " ")
 	}
 	left := joinLeft(username, watch, grouping, mode, clock, rate)
+	if m.FlashMessage != "" {
+		candidate := left + " │ " + m.FlashMessage + " │ " + help
+		if lipgloss.Width(candidate) <= limit {
+			return m.Styles.StatusBarStyle.Render(candidate)
+		}
+		flashWidth := max(1, limit-lipgloss.Width(left+" │  │ "+help))
+		candidate = left + " │ " + truncateCells(m.FlashMessage, flashWidth) + " │ " + help
+		if lipgloss.Width(candidate) <= limit {
+			return m.Styles.StatusBarStyle.Render(candidate)
+		}
+	}
 	for level := 0; level <= 3; level++ {
 		decoder := m.renderSelectedDecoderLevel(level)
 		if decoder == "" {
@@ -905,8 +938,12 @@ func (m Model) renderStatusBar() string {
 func (m Model) renderWithModal() string {
 	var b strings.Builder
 
-	// Render background (dimmed main view)
-	b.WriteString(m.Styles.DimStyle.Render(m.renderMainView()))
+	// Render the active background view.
+	background := m.renderMainView()
+	if m.ViewMode == ViewHiddenItems {
+		background = m.renderHiddenManager()
+	}
+	b.WriteString(m.Styles.DimStyle.Render(background))
 	b.WriteString("\n\n")
 
 	// Render modal
@@ -925,8 +962,10 @@ func (m Model) renderMainView() string {
 		b.WriteString(m.renderLoading())
 	} else if m.Error != nil && len(m.Groups) == 0 {
 		b.WriteString(m.renderError())
-	} else if len(m.Groups) == 0 || m.countVisiblePRs() == 0 {
+	} else if len(m.Groups) == 0 {
 		b.WriteString(m.renderEmpty())
+	} else if m.countVisiblePRs() == 0 {
+		b.WriteString(m.renderFilteredEmpty())
 	} else {
 		b.WriteString(m.renderPRList())
 	}
@@ -966,7 +1005,7 @@ func (m Model) renderHelpModal() string {
 		"j/k/↑/↓ move   gg/G top/bottom   o/O collapse",
 		"h/l tree       v view (organization/repository)",
 		"u update       r refresh          Enter open/toggle",
-		"mouse click PR open / node toggle",
+		"mouse open/toggle   H hide   M hidden   z undo",
 		"s account      c mode   d drafts  w watch",
 		"? help         q/Esc quit",
 		"",

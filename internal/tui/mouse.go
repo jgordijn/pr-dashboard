@@ -23,6 +23,9 @@ type mouseTarget struct {
 // taller than the terminal, so logical row coordinates are shifted by the same
 // suffix offset here.
 func (m Model) mouseTargets() []mouseTarget {
+	if m.ViewMode != ViewDashboard {
+		return nil
+	}
 	if m.availableWidth() < 24 {
 		return nil
 	}
@@ -68,12 +71,15 @@ func (m Model) mouseItemKeys() []string {
 	}
 	var keys []string
 	for _, group := range m.Groups {
+		if m.visiblePRCountInGroup(group) == 0 {
+			continue
+		}
 		keys = append(keys, organizationFocusKey(group.Organization))
 		if group.Collapsed {
 			continue
 		}
 		for _, pr := range group.PRs {
-			if m.ShowDrafts || !pr.IsDraft {
+			if m.isPRDisplayable(pr) {
 				keys = append(keys, pr.Key)
 			}
 		}

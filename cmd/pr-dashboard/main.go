@@ -14,6 +14,7 @@ import (
 
 	"github.com/jgordijn/pr-dashboard/internal/config"
 	"github.com/jgordijn/pr-dashboard/internal/github"
+	"github.com/jgordijn/pr-dashboard/internal/hidden"
 	"github.com/jgordijn/pr-dashboard/internal/tui"
 )
 
@@ -144,8 +145,25 @@ func run() int {
 		return 1
 	}
 
+	// Load account-scoped hidden visibility. Corrupt state never gets overwritten;
+	// the dashboard starts with persistence disabled and surfaces the error.
+	state := hidden.NewState()
+	var hiddenStore hidden.Store
+	var hiddenErr error
+	if path, pathErr := hidden.DefaultPath(); pathErr != nil {
+		hiddenErr = pathErr
+	} else {
+		store := hidden.NewFileStore(path)
+		if loaded, loadErr := store.Load(); loadErr != nil {
+			hiddenErr = loadErr
+		} else {
+			state = loaded
+			hiddenStore = store
+		}
+	}
+
 	// Create TUI model
-	model := tui.NewModel(cfg, client)
+	model := tui.NewModelWithHidden(cfg, client, hiddenStore, state, hiddenErr)
 
 	// Create Bubble Tea program with alt screen (full screen mode)
 	program := tea.NewProgram(
@@ -190,6 +208,9 @@ func printUsage() {
 	fmt.Println("  h/l or left/right Navigate tree parent/child")
 	fmt.Println("  v                Toggle organization/repository view")
 	fmt.Println("  mouse left-click Open PR or toggle tree node")
+	fmt.Println("  H                Hide focused repository or PR")
+	fmt.Println("  z                Undo latest hide")
+	fmt.Println("  M                Manage hidden items")
 	fmt.Println("  d                Toggle draft visibility")
 	fmt.Println("  c                Cycle display mode")
 	fmt.Println("  w                Toggle watch mode")

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jgordijn/pr-dashboard/internal/config"
 	"github.com/jgordijn/pr-dashboard/internal/github"
+	"github.com/jgordijn/pr-dashboard/internal/hidden"
 	"github.com/jgordijn/pr-dashboard/internal/model"
 )
 
@@ -43,6 +44,15 @@ type Model struct {
 	// OpenPR is injectable so mouse activation can be verified without launching a browser.
 	OpenPR func(organization, repository string, number int) error
 
+	// Persistent hidden-item state and manager.
+	HiddenStore   hidden.Store
+	HiddenState   *hidden.State
+	HiddenLoadErr error
+	LastHidden    *hidden.Entry
+	ViewMode      ViewMode
+	HiddenManager HiddenManagerState
+	FlashMessage  string
+
 	// Modal state
 	Modal ModalState
 
@@ -73,8 +83,13 @@ type Model struct {
 	Spinner spinner.Model
 }
 
-// NewModel creates a new TUI model with the given configuration and client.
+// NewModel creates a model without persistence, primarily for existing tests.
 func NewModel(cfg *config.Config, client *github.Client) Model {
+	return NewModelWithHidden(cfg, client, nil, hidden.NewState(), nil)
+}
+
+// NewModelWithHidden creates a model with injected persistent hidden state.
+func NewModelWithHidden(cfg *config.Config, client *github.Client, store hidden.Store, state *hidden.State, loadErr error) Model {
 	displayMode := model.DisplayModeFull
 	switch cfg.Display.InitialMode {
 	case "compact":
@@ -93,6 +108,13 @@ func NewModel(cfg *config.Config, client *github.Client) Model {
 		symbols = ASCIISymbols
 	}
 
+	if state == nil {
+		state = hidden.NewState()
+	}
+	flash := ""
+	if loadErr != nil {
+		flash = "Hidden items unavailable · " + loadErr.Error()
+	}
 	return Model{
 		Config:                    cfg,
 		Client:                    client,
@@ -105,6 +127,11 @@ func NewModel(cfg *config.Config, client *github.Client) Model {
 		RepositoryCollapsed:       make(map[string]bool),
 		TreeOrganizationCollapsed: make(map[string]bool),
 		OpenPR:                    github.OpenPRInBrowser,
+		HiddenStore:               store,
+		HiddenState:               state,
+		HiddenLoadErr:             loadErr,
+		ViewMode:                  ViewDashboard,
+		FlashMessage:              flash,
 		WatchMode:                 false,
 		Modal:                     ModalState{Type: ModalNone},
 		ChangedKeys:               make(map[string]time.Time),
@@ -266,7 +293,7 @@ func (m *Model) countVisiblePRs() int {
 	count := 0
 	for _, group := range m.Groups {
 		for _, pr := range group.PRs {
-			if m.ShowDrafts || !pr.IsDraft {
+			if m.isPRDisplayable(pr) {
 				count++
 			}
 		}

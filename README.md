@@ -11,6 +11,7 @@ A terminal UI for monitoring your GitHub pull requests across one or more organi
 - Switch between organization grouping and an organization-rooted repository tree
 - Repository-tree rows place project identity after the PR title
 - Left-click a PR to open it; click organization/repository nodes to toggle them
+- Persistently hide individual repositories or PRs, with undo and a searchable restore manager
 - Vim-style, arrow-key, and mouse navigation
 - Responsive full, compact, and minimal display modes
 - Draft visibility toggle
@@ -59,6 +60,12 @@ Default config path:
 
 ```text
 ~/.config/pr-dashboard/config.toml
+```
+
+Hidden repository/PR rules are stored separately and atomically in:
+
+```text
+~/.config/pr-dashboard/hidden.json
 ```
 
 If the config file does not exist, `pr-dashboard` starts an interactive setup wizard.
@@ -171,6 +178,9 @@ pr-dashboard --version
 
 - `c`: cycle display mode (`full -> compact -> minimal`)
 - `v`: toggle organization/repository grouping without refetching
+- `H`: persistently hide the focused repository or PR
+- `z`: undo the latest successful hide from this session
+- `M`: open the Hidden Items manager; use `/` search, `Tab` type filter, and `u`/Enter to restore
 - `d`: toggle draft visibility
 - `w`: toggle watch mode
 

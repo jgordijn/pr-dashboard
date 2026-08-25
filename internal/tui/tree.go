@@ -62,7 +62,7 @@ func (m *Model) visibleRepositoryGroups() []model.RepositoryGroup {
 	for _, group := range groups {
 		filtered := make([]model.PullRequest, 0, len(group.PRs))
 		for _, pr := range group.PRs {
-			if m.ShowDrafts || !pr.IsDraft {
+			if m.isPRDisplayable(pr) {
 				filtered = append(filtered, pr)
 			}
 		}
@@ -123,7 +123,7 @@ func (m *Model) visiblePRsOrganization() []model.PullRequest {
 			continue
 		}
 		for _, pr := range group.PRs {
-			if m.ShowDrafts || !pr.IsDraft {
+			if m.isPRDisplayable(pr) {
 				visible = append(visible, pr)
 			}
 		}
