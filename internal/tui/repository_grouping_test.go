@@ -46,7 +46,7 @@ func TestRefreshPreservesOrganizationAndRepositoryCollapse(t *testing.T) {
 
 func TestRepositoryVisibleItemsAndCollapse(t *testing.T) {
 	m := repositoryTestModel()
-	want := []string{"repo:acme/api", "acme/api#2", "acme/api#1", "repo:acme/web", "acme/web#3"}
+	want := []string{"org:acme", "repo:acme/api", "acme/api#2", "acme/api#1", "repo:acme/web", "acme/web#3"}
 	if got := m.visibleItemKeys(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("items=%v want=%v", got, want)
 	}
@@ -56,7 +56,7 @@ func TestRepositoryVisibleItemsAndCollapse(t *testing.T) {
 			t.Fatal("collapsed repository PR remained visible")
 		}
 	}
-	want = []string{"repo:acme/api", "repo:acme/web", "acme/web#3"}
+	want = []string{"org:acme", "repo:acme/api", "repo:acme/web", "acme/web#3"}
 	if got := m.visibleItemKeys(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("collapsed items=%v", got)
 	}
@@ -161,7 +161,7 @@ func TestRepositoryRenderingTreeAndTitleBeforeProject(t *testing.T) {
 	m := repositoryTestModel()
 	m.SelectedKey = "acme/api#2"
 	plain := stripRepositoryANSI(m.renderPRList())
-	for _, want := range []string{"acme/api 2", "acme/web 1", "Add retry budget", "#2", "api", "✓ ✓ ✓"} {
+	for _, want := range []string{"acme 3", "api 2", "web 1", "Add retry budget", "#2", "api", "✓ ✓ ✓"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("missing %q:\n%s", want, plain)
 		}
@@ -199,7 +199,7 @@ func TestRepositoryDraftFilteringAndCollapsedRollup(t *testing.T) {
 	m := repositoryTestModel()
 	m.Groups[0].PRs[2].IsDraft = true
 	m.ShowDrafts = false
-	if strings.Contains(stripRepositoryANSI(m.renderPRList()), "acme/web") {
+	if strings.Contains(stripRepositoryANSI(m.renderPRList()), "web 1") {
 		t.Fatal("draft-only repository should be omitted")
 	}
 	m.RepositoryCollapsed[repositoryFocusKey("acme", "api")] = true

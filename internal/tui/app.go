@@ -33,11 +33,15 @@ type Model struct {
 	SelectedKey string
 
 	// Display settings
-	DisplayMode         model.DisplayMode
-	GroupingMode        model.GroupingMode
-	ShowDrafts          bool
-	WatchMode           bool
-	RepositoryCollapsed map[string]bool
+	DisplayMode               model.DisplayMode
+	GroupingMode              model.GroupingMode
+	ShowDrafts                bool
+	WatchMode                 bool
+	RepositoryCollapsed       map[string]bool
+	TreeOrganizationCollapsed map[string]bool
+
+	// OpenPR is injectable so mouse activation can be verified without launching a browser.
+	OpenPR func(organization, repository string, number int) error
 
 	// Modal state
 	Modal ModalState
@@ -90,20 +94,22 @@ func NewModel(cfg *config.Config, client *github.Client) Model {
 	}
 
 	return Model{
-		Config:              cfg,
-		Client:              client,
-		Keys:                NewKeyMap(),
-		Styles:              NewStyles(),
-		Symbols:             symbols,
-		DisplayMode:         displayMode,
-		GroupingMode:        model.ParseGroupingMode(cfg.Display.Grouping),
-		ShowDrafts:          cfg.Display.ShowDrafts,
-		RepositoryCollapsed: make(map[string]bool),
-		WatchMode:           false,
-		Modal:               ModalState{Type: ModalNone},
-		ChangedKeys:         make(map[string]time.Time),
-		IsLoading:           true, // Start in loading state
-		Spinner:             s,
+		Config:                    cfg,
+		Client:                    client,
+		Keys:                      NewKeyMap(),
+		Styles:                    NewStyles(),
+		Symbols:                   symbols,
+		DisplayMode:               displayMode,
+		GroupingMode:              model.ParseGroupingMode(cfg.Display.Grouping),
+		ShowDrafts:                cfg.Display.ShowDrafts,
+		RepositoryCollapsed:       make(map[string]bool),
+		TreeOrganizationCollapsed: make(map[string]bool),
+		OpenPR:                    github.OpenPRInBrowser,
+		WatchMode:                 false,
+		Modal:                     ModalState{Type: ModalNone},
+		ChangedKeys:               make(map[string]time.Time),
+		IsLoading:                 true, // Start in loading state
+		Spinner:                   s,
 	}
 }
 
@@ -191,11 +197,16 @@ func (m *Model) visiblePRs() []model.PullRequest {
 		return m.visiblePRsOrganization()
 	}
 	var visible []model.PullRequest
-	for _, group := range m.visibleRepositoryGroups() {
-		if m.RepositoryCollapsed[repositoryFocusKey(group.Organization, group.Repository)] {
+	for _, organization := range m.visibleTreeOrganizations() {
+		if m.TreeOrganizationCollapsed[organizationFocusKey(organization.Organization)] {
 			continue
 		}
-		visible = append(visible, group.PRs...)
+		for _, group := range organization.Repositories {
+			if m.RepositoryCollapsed[repositoryFocusKey(group.Organization, group.Repository)] {
+				continue
+			}
+			visible = append(visible, group.PRs...)
+		}
 	}
 	return visible
 }
@@ -208,6 +219,11 @@ func (m *Model) findNearestVisibleKey() string {
 			return key
 		}
 	}
+	if organization, ok := parseOrganizationFocusKey(m.SelectedKey); ok && m.GroupingMode == model.GroupingModeOrganization {
+		if first := m.firstVisiblePRInOrganization(organization); first != "" {
+			return first
+		}
+	}
 	if owner, repo, ok := parseRepositoryFocusKey(m.SelectedKey); ok && m.GroupingMode == model.GroupingModeOrganization {
 		for _, pr := range m.visiblePRsOrganization() {
 			if pr.Organization == owner && pr.Repository == repo {
@@ -216,11 +232,25 @@ func (m *Model) findNearestVisibleKey() string {
 		}
 	}
 	if m.GroupingMode == model.GroupingModeRepository {
+		if owner, _, ok := parseRepositoryFocusKey(m.SelectedKey); ok {
+			parent := organizationFocusKey(owner)
+			for _, key := range keys {
+				if key == parent {
+					return parent
+				}
+			}
+		}
 		if pr := m.SelectedPR(); pr != nil {
 			parent := repositoryFocusKey(pr.Organization, pr.Repository)
 			for _, key := range keys {
 				if key == parent {
 					return parent
+				}
+			}
+			organization := organizationFocusKey(pr.Organization)
+			for _, key := range keys {
+				if key == organization {
+					return organization
 				}
 			}
 		}

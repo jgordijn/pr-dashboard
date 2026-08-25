@@ -2,12 +2,13 @@
 ### Requirement: Repository Tree Grouping
 The system SHALL provide a repository tree projection in addition to the existing organization-grouped projection.
 
-#### Scenario: Render repository nodes
+#### Scenario: Render organization and repository nodes
 - **WHEN** repository grouping is active
-- **THEN** each repository with visible pull requests SHALL appear as a focusable `owner/repository` node
-- **AND** its visible pull requests SHALL appear as child leaves
-- **AND** repositories SHALL sort case-insensitively by owner/repository with a deterministic raw-key tie-breaker
-- **AND** children SHALL sort by updated time descending with a stable-key tie-breaker
+- **THEN** each organization with visible pull requests SHALL appear as a focusable top-level node
+- **AND** each repository SHALL appear as a focusable child node beneath its organization
+- **AND** visible pull requests SHALL appear as leaves beneath their repository
+- **AND** organizations and repositories SHALL sort case-insensitively with deterministic raw-key tie-breakers
+- **AND** PR children SHALL sort by updated time descending with a stable-key tie-breaker
 
 #### Scenario: Put project after title
 - **WHEN** a repository-mode PR leaf is rendered
@@ -20,8 +21,8 @@ The system SHALL provide a repository tree projection in addition to the existin
 - **AND** every status triad SHALL begin in the same terminal column
 - **AND** no tree line SHALL exceed terminal width
 
-#### Scenario: Render collapsed repository risk
-- **WHEN** a repository node is collapsed
+#### Scenario: Render collapsed node risk
+- **WHEN** an organization or repository node is collapsed
 - **THEN** it SHALL summarize failing checks, behind branches, and unresolved threads using the active symbol language
 
 #### Scenario: Respect draft filtering

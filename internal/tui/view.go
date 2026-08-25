@@ -103,19 +103,63 @@ func (m Model) renderPRList() string {
 
 func (m Model) renderRepositoryTree() string {
 	var b strings.Builder
-	for _, group := range m.visibleRepositoryGroups() {
-		key := repositoryFocusKey(group.Organization, group.Repository)
-		b.WriteString(m.renderRepositoryHeader(group))
+	for _, organization := range m.visibleTreeOrganizations() {
+		organizationKey := organizationFocusKey(organization.Organization)
+		b.WriteString(m.renderTreeOrganizationHeader(organization))
 		b.WriteByte('\n')
-		if m.RepositoryCollapsed[key] {
+		if m.TreeOrganizationCollapsed[organizationKey] {
 			continue
 		}
-		for i, pr := range group.PRs {
-			b.WriteString(m.renderRepositoryPRRow(pr, i == len(group.PRs)-1))
+		for _, group := range organization.Repositories {
+			key := repositoryFocusKey(group.Organization, group.Repository)
+			b.WriteString(m.renderRepositoryHeader(group))
 			b.WriteByte('\n')
+			if m.RepositoryCollapsed[key] {
+				continue
+			}
+			for i, pr := range group.PRs {
+				b.WriteString(m.renderRepositoryPRRow(pr, i == len(group.PRs)-1))
+				b.WriteByte('\n')
+			}
 		}
 	}
 	return b.String()
+}
+
+func (m Model) renderTreeOrganizationHeader(organization repositoryTreeOrganization) string {
+	key := organizationFocusKey(organization.Organization)
+	indicator := m.Symbols.Expanded
+	if m.TreeOrganizationCollapsed[key] {
+		indicator = m.Symbols.Collapsed
+	}
+	gutter := "  "
+	if m.SelectedKey == key {
+		gutter = m.Symbols.Selected + " "
+	}
+	prs := organization.PRs()
+	header := gutter + " " + indicator + " " + organization.Organization + fmt.Sprintf(" %d", len(prs))
+	if m.TreeOrganizationCollapsed[key] {
+		risk := m.repositoryRisk(prs)
+		if risk != "" {
+			fill := "─"
+			if m.Config.Display.ASCII {
+				fill = "-"
+			}
+			fillWidth := m.availableWidth() - lipgloss.Width(header) - lipgloss.Width(risk) - 2
+			if fillWidth > 0 {
+				header += " " + strings.Repeat(fill, fillWidth) + " " + risk
+			} else {
+				header += " " + risk
+			}
+		}
+	}
+	if lipgloss.Width(header) > m.availableWidth() {
+		header = m.truncateForMode(header, m.availableWidth())
+	}
+	if m.SelectedKey == key {
+		return m.Styles.SelectedStyle.Render(header)
+	}
+	return m.Styles.HeaderStyle.Render(header)
 }
 
 func (m Model) renderRepositoryHeader(group model.RepositoryGroup) string {
@@ -128,7 +172,7 @@ func (m Model) renderRepositoryHeader(group model.RepositoryGroup) string {
 	if m.SelectedKey == key {
 		gutter = m.Symbols.Selected + " "
 	}
-	header := gutter + " " + indicator + " " + group.Organization + "/" + group.Repository + fmt.Sprintf(" %d", len(group.PRs))
+	header := "  " + gutter + " " + indicator + " " + group.Repository + fmt.Sprintf(" %d", len(group.PRs))
 	if m.RepositoryCollapsed[key] {
 		risk := m.repositoryRisk(group.PRs)
 		if risk != "" {
@@ -222,8 +266,8 @@ func (m Model) repositoryLayoutFor(pr model.PullRequest) repositoryRowLayout {
 	if layout.age == 0 {
 		layout.age = 2
 	}
-	fixed := 2 + 2 + layout.number + layout.repository + 5
-	separators := 5
+	fixed := 4 + 2 + 2 + layout.number + layout.repository + 5
+	separators := 6
 	if layout.showAuthor {
 		fixed += layout.author
 		separators++
@@ -267,7 +311,7 @@ func (m Model) renderRepositoryPRRow(pr model.PullRequest, last bool) string {
 		}
 	}
 	layout := m.repositoryLayoutFor(pr)
-	parts := []string{gutter, connector, padRight(fmt.Sprintf("#%d", pr.Number), layout.number), padRight(m.truncateForMode(pr.Title, layout.title), layout.title), padRight(m.truncateForMode(pr.Repository, layout.repository), layout.repository)}
+	parts := []string{"    ", gutter, connector, padRight(fmt.Sprintf("#%d", pr.Number), layout.number), padRight(m.truncateForMode(pr.Title, layout.title), layout.title), padRight(m.truncateForMode(pr.Repository, layout.repository), layout.repository)}
 	if layout.showAuthor {
 		parts = append(parts, padRight(m.truncateForMode(pr.Author, layout.author), layout.author))
 	}
@@ -341,7 +385,12 @@ func (m Model) renderOrgHeader(group model.PRGroup) string {
 			threads += n
 		}
 	}
-	header := fmt.Sprintf("%s %s %d", indicator, group.Organization, visible)
+	gutter := "  "
+	selected := m.SelectedKey == organizationFocusKey(group.Organization)
+	if selected {
+		gutter = m.Symbols.Selected + " "
+	}
+	header := fmt.Sprintf("%s %s %s %d", gutter, indicator, group.Organization, visible)
 	width := m.availableWidth()
 	if group.Collapsed {
 		var risk []string
@@ -370,6 +419,9 @@ func (m Model) renderOrgHeader(group model.PRGroup) string {
 	}
 	if lipgloss.Width(header) > width {
 		header = truncateCells(header, width)
+	}
+	if selected {
+		return m.Styles.SelectedStyle.Render(header)
 	}
 	return m.Styles.HeaderStyle.Render(header)
 }
@@ -914,6 +966,7 @@ func (m Model) renderHelpModal() string {
 		"j/k/↑/↓ move   gg/G top/bottom   o/O collapse",
 		"h/l tree       v view (organization/repository)",
 		"u update       r refresh          Enter open/toggle",
+		"mouse click PR open / node toggle",
 		"s account      c mode   d drafts  w watch",
 		"? help         q/Esc quit",
 		"",

@@ -8,9 +8,10 @@ A terminal UI for monitoring your GitHub pull requests across one or more organi
 
 - Project identity on every pull request, with title-first placement in repository view
 - A compact CI/review/merge symbol triad with a selected-row decoder
-- Switch between organization grouping and a collapsible repository tree
+- Switch between organization grouping and an organization-rooted repository tree
 - Repository-tree rows place project identity after the PR title
-- Vim-style and arrow-key navigation
+- Left-click a PR to open it; click organization/repository nodes to toggle them
+- Vim-style, arrow-key, and mouse navigation
 - Responsive full, compact, and minimal display modes
 - Draft visibility toggle
 - Watch mode with refresh + change highlighting
@@ -112,6 +113,17 @@ Each row keeps the repository and a fixed three-slot status triad visible:
 
 The gutter uses `▶` for the selected row and `●` for recently changed data. `◈n` is the unresolved-thread count. The status bar spells out the selected row's symbols, and `?` opens the complete legend. Set `display.ascii = true` for the equivalent ASCII vocabulary.
 
+Repository grouping retains the organization as the tree root:
+
+```text
+▾ RoyalAholdDelhaize 3
+  ▾ agentic-demo 1
+    └─ #1 OpenSpecs: AH Groceries Agent  agentic-demo  ✓ ? ✓
+  ▾ ahold-a2a 2
+    ├─ #34 Add A2A MCP bridge           ahold-a2a     ✓ ✓ ✓
+    └─ #33 Add deployment mappings      ahold-a2a     ✓ ✓ ✓
+```
+
 ## Usage
 
 Run the dashboard:
@@ -137,6 +149,8 @@ pr-dashboard --version
 
 ### Navigation
 
+- Left-click a PR row: focus and open that exact PR in the browser
+- Left-click an organization or repository node: focus and toggle it
 - `j` / `↓`: move down
 - `k` / `↑`: move up
 - `gg`: go to top

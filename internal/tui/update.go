@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -19,6 +20,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
+
+	case tea.MouseMsg:
+		return m.handleMouseMsg(msg)
 
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
@@ -158,9 +162,21 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleUpdateBranch()
 
 	case key.Matches(msg, m.Keys.OpenBrowser):
-		if _, _, ok := parseRepositoryFocusKey(m.SelectedKey); ok && m.GroupingMode == model.GroupingModeRepository {
-			m = m.toggleRepository(m.SelectedKey)
-			return m, nil
+		if m.GroupingMode == model.GroupingModeOrganization {
+			if _, ok := parseOrganizationFocusKey(m.SelectedKey); ok {
+				m = m.toggleOrganizationViewNode(m.SelectedKey)
+				return m, nil
+			}
+		}
+		if m.GroupingMode == model.GroupingModeRepository {
+			if _, ok := parseOrganizationFocusKey(m.SelectedKey); ok {
+				m = m.toggleTreeOrganization(m.SelectedKey)
+				return m, nil
+			}
+			if _, _, ok := parseRepositoryFocusKey(m.SelectedKey); ok {
+				m = m.toggleRepository(m.SelectedKey)
+				return m, nil
+			}
 		}
 		return m.openInBrowser()
 
@@ -313,7 +329,11 @@ func (m Model) toggleCurrentOrg() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.GroupingMode == model.GroupingModeRepository {
-		m = m.toggleRepository(m.SelectedKey)
+		m = m.toggleFocusedTreeNode()
+		return m, nil
+	}
+	if _, ok := parseOrganizationFocusKey(m.SelectedKey); ok {
+		m = m.toggleOrganizationViewNode(m.SelectedKey)
 		return m, nil
 	}
 
@@ -337,19 +357,29 @@ func (m Model) toggleCurrentOrg() (tea.Model, tea.Cmd) {
 // toggleAllOrgs toggles collapse state of all organizations.
 func (m Model) toggleAllOrgs() (tea.Model, tea.Cmd) {
 	if m.GroupingMode == model.GroupingModeRepository {
-		if m.RepositoryCollapsed == nil {
-			m.RepositoryCollapsed = make(map[string]bool)
-		}
-		groups := m.visibleRepositoryGroups()
+		m.ensureTreeCollapseMaps()
+		organizations := m.visibleTreeOrganizations()
 		anyCollapsed := false
-		for _, group := range groups {
-			if m.RepositoryCollapsed[repositoryFocusKey(group.Organization, group.Repository)] {
+		for _, organization := range organizations {
+			if m.TreeOrganizationCollapsed[organizationFocusKey(organization.Organization)] {
 				anyCollapsed = true
 				break
 			}
+			for _, repository := range organization.Repositories {
+				if m.RepositoryCollapsed[repositoryFocusKey(repository.Organization, repository.Repository)] {
+					anyCollapsed = true
+					break
+				}
+			}
+			if anyCollapsed {
+				break
+			}
 		}
-		for _, group := range groups {
-			m.RepositoryCollapsed[repositoryFocusKey(group.Organization, group.Repository)] = !anyCollapsed
+		for _, organization := range organizations {
+			m.TreeOrganizationCollapsed[organizationFocusKey(organization.Organization)] = !anyCollapsed
+			for _, repository := range organization.Repositories {
+				m.RepositoryCollapsed[repositoryFocusKey(repository.Organization, repository.Repository)] = !anyCollapsed
+			}
 		}
 		m.SelectedKey = m.findNearestVisibleKey()
 		return m, nil
@@ -505,7 +535,11 @@ func (m Model) openInBrowser() (tea.Model, tea.Cmd) {
 func (m Model) openBrowserCmd(pr *model.PullRequest) tea.Cmd {
 	return func() tea.Msg {
 		// gh pr view --web <number> --repo <owner/name>
-		err := github.OpenPRInBrowser(pr.Organization, pr.Repository, pr.Number)
+		opener := m.OpenPR
+		if opener == nil {
+			return ActionResultMsg{PRKey: pr.Key, Action: "open", Success: false, Message: "Failed to open in browser: browser opener unavailable", Err: errors.New("browser opener unavailable")}
+		}
+		err := opener(pr.Organization, pr.Repository, pr.Number)
 		if err != nil {
 			return ActionResultMsg{
 				PRKey:   pr.Key,
